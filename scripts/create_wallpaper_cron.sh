@@ -2,11 +2,12 @@
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-WALLPAPER_SCRIPT="$SCRIPT_DIR/set_wallpaper.py"
+# Go up one directory to find set_wallpaper.py
+WALLPAPER_SCRIPT="$(dirname "$SCRIPT_DIR")/set_wallpaper.py"
 
 # Check if the wallpaper script exists
 if [ ! -f "$WALLPAPER_SCRIPT" ]; then
-    echo "Error: set_wallpaper.py not found in $SCRIPT_DIR"
+    echo "Error: set_wallpaper.py not found in $(dirname "$SCRIPT_DIR")"
     exit 1
 fi
 

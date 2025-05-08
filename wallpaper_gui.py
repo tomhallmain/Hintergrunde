@@ -9,8 +9,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap, QImage
 
-# Import the wallpaper functionality
-from set_wallpaper import WallpaperRotator, set_wallpaper
+# Import the wallpaper functionality from the package
+from wallpaper_manager import WallpaperRotator, set_wallpaper
 
 class WallpaperGUI(QMainWindow):
     def __init__(self):

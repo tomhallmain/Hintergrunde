@@ -1,6 +1,7 @@
-# Get the current script's directory
+# Get the current script's directory and go up one level to find set_wallpaper.py
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$wallpaperScript = Join-Path $scriptDir "set_wallpaper.py"
+$rootDir = Split-Path -Parent $scriptDir
+$wallpaperScript = Join-Path $rootDir "set_wallpaper.py"
 
 # Get the wallpapers directory from user input
 $wallpapersDir = Read-Host "Enter the full path to your wallpapers directory"
