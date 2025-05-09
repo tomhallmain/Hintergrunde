@@ -5,12 +5,13 @@ from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QFileDialog, 
-                             QSpinBox, QListWidget, QMessageBox)
-from PySide6.QtCore import Qt
+                             QSpinBox, QListWidget, QMessageBox, QGroupBox,
+                             QTimeEdit, QCheckBox)
+from PySide6.QtCore import Qt, QTime
 from PySide6.QtGui import QPixmap, QImage
 
 # Import the wallpaper functionality from the package
-from wallpaper_manager import WallpaperRotator, set_wallpaper
+from wallpaper_manager import WallpaperRotator, set_wallpaper, TaskScheduler
 
 class WallpaperGUI(QMainWindow):
     def __init__(self):
@@ -63,8 +64,91 @@ class WallpaperGUI(QMainWindow):
         self.history_list = QListWidget()
         layout.addWidget(self.history_list)
         
+        # Task Scheduling Section
+        task_group = QGroupBox("Task Scheduling")
+        task_layout = QVBoxLayout()
+        
+        # Enable/Disable scheduling
+        self.schedule_checkbox = QCheckBox("Enable automatic rotation")
+        self.schedule_checkbox.stateChanged.connect(self.toggle_scheduling)
+        task_layout.addWidget(self.schedule_checkbox)
+        
+        # Time selection
+        time_layout = QHBoxLayout()
+        time_layout.addWidget(QLabel("Rotation time:"))
+        self.time_edit = QTimeEdit()
+        self.time_edit.setTime(QTime(9, 0))  # Default to 9:00 AM
+        self.time_edit.setEnabled(False)
+        time_layout.addWidget(self.time_edit)
+        task_layout.addLayout(time_layout)
+        
+        # Task management buttons
+        task_buttons_layout = QHBoxLayout()
+        self.create_task_button = QPushButton("Create Task")
+        self.create_task_button.clicked.connect(self.create_scheduled_task)
+        self.create_task_button.setEnabled(False)
+        self.remove_task_button = QPushButton("Remove Task")
+        self.remove_task_button.clicked.connect(self.remove_scheduled_task)
+        self.remove_task_button.setEnabled(False)
+        task_buttons_layout.addWidget(self.create_task_button)
+        task_buttons_layout.addWidget(self.remove_task_button)
+        task_layout.addLayout(task_buttons_layout)
+        
+        task_group.setLayout(task_layout)
+        layout.addWidget(task_group)
+        
         self.rotator = None
         self.current_directory = None
+        self.task_scheduler = TaskScheduler()
+        
+        # Check for existing task
+        self.check_existing_task()
+    
+    def toggle_scheduling(self, state):
+        """Enable/disable scheduling controls based on checkbox state."""
+        enabled = state == Qt.Checked
+        self.time_edit.setEnabled(enabled)
+        self.create_task_button.setEnabled(enabled)
+        self.remove_task_button.setEnabled(enabled)
+    
+    def check_existing_task(self):
+        """Check if a scheduled task already exists."""
+        if self.task_scheduler.check_existing_task():
+            self.schedule_checkbox.setChecked(True)
+            self.remove_task_button.setEnabled(True)
+    
+    def create_scheduled_task(self):
+        """Create a scheduled task for wallpaper rotation."""
+        if not self.current_directory:
+            QMessageBox.warning(self, "Error", "Please select an image directory first")
+            return
+        
+        try:
+            script_path = os.path.abspath(__file__)
+            time_str = self.time_edit.time().toString("HH:mm")
+            days = self.min_days_spin.value()
+            
+            self.task_scheduler.create_task(
+                script_path=script_path,
+                wallpapers_dir=self.current_directory,
+                days_interval=days,
+                time_str=time_str
+            )
+            
+            QMessageBox.information(self, "Success", "Scheduled task created successfully!")
+            self.remove_task_button.setEnabled(True)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to create scheduled task: {str(e)}")
+    
+    def remove_scheduled_task(self):
+        """Remove the scheduled task."""
+        try:
+            self.task_scheduler.remove_task()
+            QMessageBox.information(self, "Success", "Scheduled task removed successfully!")
+            self.schedule_checkbox.setChecked(False)
+            self.remove_task_button.setEnabled(False)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to remove scheduled task: {str(e)}")
     
     def select_directory(self):
         directory = QFileDialog.getExistingDirectory(self, "Select Image Directory")

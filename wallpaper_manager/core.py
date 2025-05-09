@@ -7,7 +7,65 @@ import random
 import json
 import time
 from pathlib import Path
-from datetime import datetime, timedelta
+from enum import Enum, auto
+from .utils import check_powershell_execution_policy, check_linux_dependencies
+
+class ScalingMode(Enum):
+    """Enum for wallpaper scaling modes."""
+    FILL = auto()    # Fill the screen, may crop
+    FIT = auto()     # Fit the screen, may have letterboxing
+    STRETCH = auto() # Stretch to fill, may distort
+
+    def get_macos_option(self) -> str:
+        """Get the corresponding macOS scaling option."""
+        return {
+            ScalingMode.FILL: 'fill',
+            ScalingMode.FIT: 'fit',
+            ScalingMode.STRETCH: 'stretch'
+        }[self]
+
+    def get_gnome_option(self) -> str:
+        """Get the corresponding GNOME scaling option."""
+        return {
+            ScalingMode.FILL: 'zoom',
+            ScalingMode.FIT: 'scaled',
+            ScalingMode.STRETCH: 'stretched'
+        }[self]
+
+    def get_feh_option(self) -> str:
+        """Get the corresponding feh scaling option."""
+        return '--bg-scale' if self == ScalingMode.FIT else '--bg-fill'
+
+    def get_windows_style(self) -> int:
+        """Get the corresponding Windows wallpaper style.
+        
+        Windows styles:
+        0 = Center
+        1 = Stretch
+        2 = Tile
+        3 = Fit
+        4 = Fill
+        5 = Span
+        """
+        return {
+            ScalingMode.FILL: 4,    # Fill
+            ScalingMode.FIT: 3,     # Fit
+            ScalingMode.STRETCH: 1  # Stretch
+        }[self]
+
+    @classmethod
+    def from_string(cls, mode_str: str) -> 'ScalingMode':
+        """Convert string to ScalingMode enum value."""
+        mode_map = {
+            'fill': cls.FILL,
+            'fit': cls.FIT,
+            'stretch': cls.STRETCH,
+            'auto': None  # None means let the function determine the mode
+        }
+        mode_str = mode_str.lower()
+        if mode_str not in mode_map:
+            raise ValueError(f"Invalid scaling mode: {mode_str}. Must be one of: {', '.join(mode_map.keys())}")
+        return mode_map[mode_str]
 
 class WallpaperRotator:
     def __init__(self, image_dir, cache_file=None):
@@ -82,46 +140,29 @@ class WallpaperRotator:
         self._save_cache()
         return selected_image
 
-def check_powershell_execution_policy():
-    """Check if PowerShell execution policy might block the script."""
+def get_scaling_mode(image_path):
+    """Determine the appropriate scaling mode based on image aspect ratio.
+    Returns FILL if PIL is not available or if the image is landscape."""
     try:
-        result = subprocess.run(['powershell', '-Command', 'Get-ExecutionPolicy'], 
-                              capture_output=True, text=True, check=True)
-        policy = result.stdout.strip().lower()
-        if policy in ['restricted', 'allrestricted']:
-            print("Warning: PowerShell execution policy is restricted. The script might not work.",
-                  "Consider running: Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser",
-                  file=sys.stderr)
-    except Exception:
-        pass  # Ignore any errors in the check
+        from PIL import Image
+        with Image.open(image_path) as img:
+            width, height = img.size
+            # If image is portrait (height > width), use FIT to avoid stretching
+            if width < height:
+                return ScalingMode.FIT
+    except (ImportError, Exception):
+        pass
+    return ScalingMode.FILL
 
-def check_linux_dependencies():
-    """Check if required Linux tools are installed."""
-    missing_tools = []
-    
-    # Check for gsettings
-    try:
-        subprocess.run(['which', 'gsettings'], capture_output=True, check=True)
-    except subprocess.CalledProcessError:
-        missing_tools.append('gsettings')
-    
-    # Check for feh
-    try:
-        subprocess.run(['which', 'feh'], capture_output=True, check=True)
-    except subprocess.CalledProcessError:
-        missing_tools.append('feh')
-    
-    if missing_tools:
-        print("Warning: The following tools are not installed:", ', '.join(missing_tools),
-              "\nYou may need to install them for the script to work on your Linux system.",
-              file=sys.stderr)
-
-def set_windows_wallpaper(image_path):
+def set_windows_wallpaper(image_path, scaling_mode=ScalingMode.FILL):
     """Set wallpaper on Windows using PowerShell."""
     # Convert to absolute path
     abs_path = str(Path(image_path).resolve())
     
-    # PowerShell command to set wallpaper
+    # Get Windows style from scaling mode
+    style = scaling_mode.get_windows_style()
+    
+    # PowerShell command to set wallpaper and style
     ps_command = f'''
     Add-Type @"
     using System;
@@ -132,24 +173,30 @@ def set_windows_wallpaper(image_path):
     }}
 "@
     $SPI_SETDESKWALLPAPER = 0x0014
+    $SPI_SETDESKWALLPAPERSTYLE = 0x001B
     $UpdateIniFile = 0x01
     $SendChangeEvent = 0x02
     $fWinIni = $UpdateIniFile -bor $SendChangeEvent
-    [Wallpaper]::SystemParametersInfo($SPI_SETDESKWALLPAPER, 0, "{abs_path}", $fWinIni)
+    [Wallpaper]::SystemParametersInfo($SPI_SETDESKWALLPAPER, 0, "{abs_path}", $fWinIni) | Out-Null
+    [Wallpaper]::SystemParametersInfo($SPI_SETDESKWALLPAPERSTYLE, 0, $null, $fWinIni) | Out-Null
+    Set-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name WallpaperStyle -Value {style}
+    Set-ItemProperty -Path 'HKCU:\\Control Panel\\Desktop' -Name TileWallpaper -Value 0
     '''
     
     try:
-        subprocess.run(['powershell', '-Command', ps_command], check=True)
+        subprocess.run(['powershell', '-Command', ps_command], check=True, capture_output=True)
     except subprocess.CalledProcessError as e:
         print(f"Warning: PowerShell command failed: {str(e)}", file=sys.stderr)
         raise
 
-def set_macos_wallpaper(image_path):
+def set_macos_wallpaper(image_path, scaling_mode=ScalingMode.FILL):
     """Set wallpaper on macOS using osascript."""
     abs_path = str(Path(image_path).resolve())
+    
     script = f'''
     tell application "Finder"
         set desktop picture to POSIX file "{abs_path}"
+        set desktop picture options to {{scaling: {scaling_mode.get_macos_option()}}}
     end tell
     '''
     try:
@@ -158,34 +205,47 @@ def set_macos_wallpaper(image_path):
         print(f"Warning: AppleScript command failed: {str(e)}", file=sys.stderr)
         raise
 
-def set_linux_wallpaper(image_path):
+def set_linux_wallpaper(image_path, scaling_mode=ScalingMode.FILL):
     """Set wallpaper on Linux using gsettings (GNOME) or feh (other DEs)."""
     abs_path = str(Path(image_path).resolve())
     
     # Try GNOME first
     try:
-        subprocess.run(['gsettings', 'set', 'org.gnome.desktop.background', 'picture-uri', f'file://{abs_path}'], check=True)
+        subprocess.run(['gsettings', 'set', 'org.gnome.desktop.background', 'picture-options', 
+                       scaling_mode.get_gnome_option()], check=True)
+        subprocess.run(['gsettings', 'set', 'org.gnome.desktop.background', 'picture-uri', 
+                       f'file://{abs_path}'], check=True)
         return
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         print(f"Warning: gsettings failed: {str(e)}", file=sys.stderr)
     
     # Try feh
     try:
-        subprocess.run(['feh', '--bg-fill', abs_path], check=True)
+        subprocess.run(['feh', scaling_mode.get_feh_option(), abs_path], check=True)
         return
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
         print(f"Warning: feh failed: {str(e)}", file=sys.stderr)
     
     raise RuntimeError("Could not set wallpaper. Neither gsettings nor feh is available.")
 
-def set_wallpaper(image_path):
-    """Set wallpaper based on the current operating system."""
+def set_wallpaper(image_path, scaling_mode=None):
+    """Set wallpaper based on the current operating system.
+    
+    Args:
+        image_path: Path to the image file
+        scaling_mode: Optional ScalingMode enum value. If None, the mode will be
+                     determined automatically based on the image aspect ratio.
+    """
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Image file not found: {image_path}")
     
     # Check file permissions
     if not os.access(image_path, os.R_OK):
         raise PermissionError(f"Cannot read image file: {image_path}")
+    
+    # If no scaling mode specified, determine it based on image dimensions
+    if scaling_mode is None:
+        scaling_mode = get_scaling_mode(image_path)
     
     system = platform.system().lower()
     
@@ -197,11 +257,11 @@ def set_wallpaper(image_path):
     
     try:
         if system == 'windows':
-            set_windows_wallpaper(image_path)
+            set_windows_wallpaper(image_path, scaling_mode)
         elif system == 'darwin':
-            set_macos_wallpaper(image_path)
+            set_macos_wallpaper(image_path, scaling_mode)
         elif system == 'linux':
-            set_linux_wallpaper(image_path)
+            set_linux_wallpaper(image_path, scaling_mode)
         else:
             raise RuntimeError(f"Unsupported operating system: {system}")
         

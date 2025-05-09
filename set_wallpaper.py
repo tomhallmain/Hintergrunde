@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
 import sys
 import argparse
-from wallpaper_manager import set_wallpaper, rotate_wallpaper
+from wallpaper_manager import set_wallpaper, rotate_wallpaper, ScalingMode
 
 def print_help():
     """Print detailed help information."""
     print("Wallpaper Manager - A cross-platform wallpaper management tool")
     print("\nUsage:")
     print("  Set specific wallpaper:")
-    print("    python set_wallpaper.py <path_to_image>")
+    print("    python set_wallpaper.py <path_to_image> [--scaling-mode MODE]")
     print("\n  Rotate wallpaper:")
     print("    python set_wallpaper.py --rotate <path_to_image_directory> [--min-days DAYS]")
     print("\nOptions:")
     print("  --rotate           Enable wallpaper rotation mode")
     print("  --min-days DAYS    Minimum days between wallpaper repeats (default: 7)")
+    print("  --scaling-mode MODE  How to scale the wallpaper (default: auto)")
+    print("                      Available modes: fill, fit, stretch, auto")
     print("  -h, --help        Show this help message")
     print("\nExamples:")
     print("  Set a specific wallpaper:")
     print("    python set_wallpaper.py C:/Pictures/wallpaper.jpg")
+    print("    python set_wallpaper.py C:/Pictures/wallpaper.jpg --scaling-mode fit")
     print("\n  Rotate wallpapers every 3 days:")
     print("    python set_wallpaper.py --rotate C:/Pictures/Wallpapers --min-days 3")
 
@@ -31,6 +34,8 @@ def main():
     parser = argparse.ArgumentParser(description="Wallpaper Manager - A cross-platform wallpaper management tool")
     parser.add_argument('--rotate', action='store_true', help='Enable wallpaper rotation mode')
     parser.add_argument('--min-days', type=int, default=7, help='Minimum days between wallpaper repeats (default: 7)')
+    parser.add_argument('--scaling-mode', type=str, default='auto',
+                      help='How to scale the wallpaper (fill, fit, stretch, or auto)')
     parser.add_argument('path', nargs='?', help='Path to image file or directory (for rotation mode)')
 
     try:
@@ -38,6 +43,13 @@ def main():
     except SystemExit:
         # If argparse encounters an error, it will call sys.exit()
         # We want to show our custom help instead
+        print_help()
+        sys.exit(1)
+
+    try:
+        scaling_mode = ScalingMode.from_string(args.scaling_mode)
+    except ValueError as e:
+        print(f"Error: {str(e)}")
         print_help()
         sys.exit(1)
 
@@ -52,7 +64,7 @@ def main():
             print("Error: Please specify an image file")
             print_help()
             sys.exit(1)
-        set_wallpaper(args.path)
+        set_wallpaper(args.path, scaling_mode)
 
 if __name__ == '__main__':
     main() 

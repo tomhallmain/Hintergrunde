@@ -1,3 +1,4 @@
-from .core import WallpaperRotator, set_wallpaper, rotate_wallpaper
+from .core import set_wallpaper, rotate_wallpaper, ScalingMode, WallpaperRotator
+from .task_scheduler import TaskScheduler
 
-__all__ = ['WallpaperRotator', 'set_wallpaper', 'rotate_wallpaper'] 
+__all__ = ['set_wallpaper', 'rotate_wallpaper', 'ScalingMode', 'WallpaperRotator', 'TaskScheduler'] 
