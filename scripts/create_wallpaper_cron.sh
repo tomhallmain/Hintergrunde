@@ -14,8 +14,30 @@ fi
 # Make sure the wallpaper script is executable
 chmod +x "$WALLPAPER_SCRIPT"
 
-# Get the wallpapers directory
-read -p "Enter the full path to your wallpapers directory: " WALLPAPERS_DIR
+# Check if parameters are provided
+if [ $# -eq 3 ]; then
+    # Use provided parameters
+    WALLPAPERS_DIR="$1"
+    DAYS_INTERVAL="$2"
+    TIME_STR="$3"
+else
+    # Get the wallpapers directory from user input
+    read -p "Enter the full path to your wallpapers directory: " WALLPAPERS_DIR
+
+    # Get the rotation interval
+    read -p "Enter the number of days between rotations (default: 7): " DAYS_INTERVAL
+    if ! [[ "$DAYS_INTERVAL" =~ ^[0-9]+$ ]]; then
+        DAYS_INTERVAL=7
+        echo "Using default interval of 7 days"
+    fi
+
+    # Get the time
+    read -p "Enter the time for rotation (HH:MM, default: 09:00): " TIME_STR
+    if ! [[ "$TIME_STR" =~ ^([0-1][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+        TIME_STR="09:00"
+        echo "Using default time of 09:00"
+    fi
+fi
 
 # Validate the directory exists
 if [ ! -d "$WALLPAPERS_DIR" ]; then
@@ -23,12 +45,20 @@ if [ ! -d "$WALLPAPERS_DIR" ]; then
     exit 1
 fi
 
-# Get the rotation interval
-read -p "Enter the number of days between rotations (default: 7): " DAYS_INTERVAL
+# Validate days interval
 if ! [[ "$DAYS_INTERVAL" =~ ^[0-9]+$ ]]; then
-    DAYS_INTERVAL=7
-    echo "Using default interval of 7 days"
+    echo "Error: Days interval must be a positive integer"
+    exit 1
 fi
+
+# Validate time format
+if ! [[ "$TIME_STR" =~ ^([0-1][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
+    echo "Error: Time must be in HH:MM format"
+    exit 1
+fi
+
+# Parse time
+IFS=':' read -r HOUR MINUTE <<< "$TIME_STR"
 
 # Create a temporary file for the new crontab
 TEMP_CRON=$(mktemp)
@@ -46,9 +76,9 @@ if grep -q "set_wallpaper.py.*--rotate" "$TEMP_CRON"; then
     sed -i '/^$/d' "$TEMP_CRON"
 fi
 
-# Add the new cron job (runs at 9 AM every X days)
+# Add the new cron job (runs at specified time every X days)
 echo "# Wallpaper rotation task" >> "$TEMP_CRON"
-echo "0 9 */$DAYS_INTERVAL * * python3 \"$WALLPAPER_SCRIPT\" --rotate \"$WALLPAPERS_DIR\" --min-days $DAYS_INTERVAL >> \"$WALLPAPERS_DIR/wallpaper_rotation.log\" 2>&1" >> "$TEMP_CRON"
+echo "$MINUTE $HOUR */$DAYS_INTERVAL * * python3 \"$WALLPAPER_SCRIPT\" --rotate \"$WALLPAPERS_DIR\" --min-days $DAYS_INTERVAL >> \"$WALLPAPERS_DIR/wallpaper_rotation.log\" 2>&1" >> "$TEMP_CRON"
 
 # Install the new crontab
 if ! crontab "$TEMP_CRON"; then
@@ -60,15 +90,18 @@ fi
 # Clean up
 rm "$TEMP_CRON"
 
-echo -e "\nCron job created successfully!"
-echo "Task: Rotate wallpaper every $DAYS_INTERVAL days"
-echo "Wallpapers Directory: $WALLPAPERS_DIR"
-echo "Log File: $WALLPAPERS_DIR/wallpaper_rotation.log"
-echo -e "\nNote: The task will run every $DAYS_INTERVAL days at 9 AM, and the script will only change the wallpaper"
-echo "if it hasn't been changed in the last $DAYS_INTERVAL days (to avoid repeating wallpapers too soon)."
-echo -e "\nTo view the rotation logs:"
-echo "cat $WALLPAPERS_DIR/wallpaper_rotation.log"
-echo -e "\nTo modify the schedule:"
-echo "1. Run: crontab -e"
-echo "2. Edit the line starting with '0 9'"
-echo "3. Save and exit" 
+# Show success message only in interactive mode
+if [ $# -ne 3 ]; then
+    echo -e "\nCron job created successfully!"
+    echo "Task: Rotate wallpaper every $DAYS_INTERVAL days at $TIME_STR"
+    echo "Wallpapers Directory: $WALLPAPERS_DIR"
+    echo "Log File: $WALLPAPERS_DIR/wallpaper_rotation.log"
+    echo -e "\nNote: The task will run every $DAYS_INTERVAL days at $TIME_STR, and the script will only change the wallpaper"
+    echo "if it hasn't been changed in the last $DAYS_INTERVAL days (to avoid repeating wallpapers too soon)."
+    echo -e "\nTo view the rotation logs:"
+    echo "cat $WALLPAPERS_DIR/wallpaper_rotation.log"
+    echo -e "\nTo modify the schedule:"
+    echo "1. Run: crontab -e"
+    echo "2. Edit the line starting with '$MINUTE $HOUR'"
+    echo "3. Save and exit"
+fi 

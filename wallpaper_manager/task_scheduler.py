@@ -2,13 +2,110 @@
 import os
 import platform
 import subprocess
+import re
 from pathlib import Path
+from typing import Optional, Dict, Any
 
 class TaskScheduler:
     """Handles creation and management of scheduled wallpaper rotation tasks."""
     
     def __init__(self):
         self.system = platform.system().lower()
+        # Get the path to the scripts directory
+        self.script_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'scripts')
+        self.ps_script = os.path.join(self.script_dir, 'create_wallpaper_task.ps1')
+        self.cron_script = os.path.join(self.script_dir, 'create_wallpaper_cron.sh')
+        
+        # Validate script existence
+        if self.system == 'windows' and not os.path.exists(self.ps_script):
+            raise RuntimeError("PowerShell script not found. Please ensure scripts/create_wallpaper_task.ps1 exists.")
+        elif self.system in ['linux', 'darwin'] and not os.path.exists(self.cron_script):
+            raise RuntimeError("Cron script not found. Please ensure scripts/create_wallpaper_cron.sh exists.")
+    
+    def get_task_info(self) -> Optional[Dict[str, Any]]:
+        """Get detailed information about the existing wallpaper rotation task.
+        
+        Returns:
+            Optional[Dict[str, Any]]: Dictionary containing task information if a task exists,
+            None otherwise. The dictionary contains:
+            - enabled: bool - Whether the task is enabled
+            - time: str - Time of day for rotation (HH:mm format)
+            - days: int - Days between rotations
+            - directory: str - Wallpaper directory
+        """
+        if self.system == 'windows':
+            return self._get_windows_task_info()
+        elif self.system in ['linux', 'darwin']:
+            return self._get_unix_task_info()
+        return None
+    
+    def _get_windows_task_info(self) -> Optional[Dict[str, Any]]:
+        """Get Windows task information."""
+        try:
+            # First check if the task exists
+            result = subprocess.run(['schtasks', '/query', '/tn', 'RotateWallpaper', '/fo', 'list'], 
+                                  capture_output=True, text=True, encoding='cp1252', errors='replace')
+            
+            # If task doesn't exist, return None
+            if result.returncode != 0:
+                return None
+            
+            # Now get detailed information
+            result = subprocess.run(['schtasks', '/query', '/tn', 'RotateWallpaper', '/fo', 'list', '/v'], 
+                                  capture_output=True, text=True, encoding='cp1252', errors='replace')
+            
+            # Parse task information
+            task_info = {}
+            for line in result.stdout.splitlines():
+                if 'Status:' in line:
+                    task_info['enabled'] = 'Running' in line
+                elif 'Task To Run:' in line:
+                    # Extract command line arguments
+                    cmd = line.split('Task To Run:')[1].strip()
+                    # Parse arguments
+                    if '--rotate' in cmd and '--min-days' in cmd:
+                        # Extract directory
+                        dir_match = re.search(r'--rotate\s+"([^"]+)"', cmd)
+                        if dir_match:
+                            task_info['directory'] = dir_match.group(1)
+                        # Extract days
+                        days_match = re.search(r'--min-days\s+(\d+)', cmd)
+                        if days_match:
+                            task_info['days'] = int(days_match.group(1))
+                elif 'Start Time:' in line:
+                    time_str = line.split('Start Time:')[1].strip()
+                    task_info['time'] = time_str
+            
+            return task_info if task_info else None
+        except Exception:
+            return None
+    
+    def _get_unix_task_info(self) -> Optional[Dict[str, Any]]:
+        """Get Unix cron job information."""
+        try:
+            result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
+            if result.returncode != 0:
+                return None
+            
+            for line in result.stdout.splitlines():
+                if 'set_wallpaper.py.*--rotate' in line:
+                    # Parse cron line
+                    parts = line.split()
+                    if len(parts) >= 6:
+                        task_info = {
+                            'enabled': True,
+                            'time': f"{parts[1]}:{parts[0]}",  # hour:minute
+                            'days': int(parts[2].replace('*/', '')),
+                            'directory': None
+                        }
+                        # Extract directory from command
+                        dir_match = re.search(r'--rotate\s+"([^"]+)"', line)
+                        if dir_match:
+                            task_info['directory'] = dir_match.group(1)
+                        return task_info
+            return None
+        except Exception:
+            return None
     
     def check_existing_task(self) -> bool:
         """Check if a wallpaper rotation task already exists.
@@ -16,20 +113,7 @@ class TaskScheduler:
         Returns:
             bool: True if a task exists, False otherwise
         """
-        if self.system == 'windows':
-            try:
-                result = subprocess.run(['schtasks', '/query', '/tn', 'RotateWallpaper'], 
-                                     capture_output=True, text=True)
-                return result.returncode == 0
-            except Exception:
-                return False
-        elif self.system in ['linux', 'darwin']:  # darwin is macOS
-            try:
-                result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
-                return 'set_wallpaper.py.*--rotate' in result.stdout
-            except Exception:
-                return False
-        return False
+        return self.get_task_info() is not None
     
     def create_task(self, script_path: str, wallpapers_dir: str, days_interval: int, 
                    time_str: str) -> None:
@@ -46,9 +130,9 @@ class TaskScheduler:
             NotImplementedError: If OS is not supported
         """
         if self.system == 'windows':
-            self._create_windows_task(script_path, wallpapers_dir, days_interval, time_str)
+            self._create_windows_task(wallpapers_dir, days_interval, time_str)
         elif self.system in ['linux', 'darwin']:  # darwin is macOS
-            self._create_unix_task(script_path, wallpapers_dir, days_interval, time_str)
+            self._create_unix_task(wallpapers_dir, days_interval, time_str)
         else:
             raise NotImplementedError(f"Task scheduling not supported on {self.system}")
     
@@ -66,56 +150,73 @@ class TaskScheduler:
         else:
             raise NotImplementedError(f"Task scheduling not supported on {self.system}")
     
-    def _create_windows_task(self, script_path: str, wallpapers_dir: str, 
-                           days_interval: int, time_str: str) -> None:
-        """Create a Windows scheduled task."""
-        # Create the task action
-        action = f'python "{script_path}" --rotate "{wallpapers_dir}" --min-days {days_interval}'
-        
-        # Create the task using schtasks
+    def _create_windows_task(self, wallpapers_dir: str, days_interval: int, time_str: str) -> None:
+        """Create a Windows scheduled task using PowerShell script."""
+        # Run the PowerShell script with the parameters
         cmd = [
-            'schtasks', '/create', '/tn', 'RotateWallpaper',
-            '/tr', action, '/sc', 'daily', '/st', time_str,
-            '/f'  # Force creation (overwrite if exists)
+            'powershell.exe',
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', self.ps_script,
+            '-WallpapersDir', str(wallpapers_dir),
+            '-DaysInterval', str(days_interval),
+            '-Time', time_str
+        ]
+        
+        print(f"Creating scheduled task with parameters: dir={wallpapers_dir}, interval={days_interval} days, time={time_str}")
+        
+        # Run the command and show output in real-time
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding='cp1252',
+            errors='replace'
+        )
+        
+        # Print output in real-time
+        while True:
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output and "Debug:" in output:  # Only show debug lines
+                print(f"PowerShell: {output.strip()}")
+        
+        # Get any remaining output and the return code
+        stdout, stderr = process.communicate()
+        if stderr:
+            print(f"PowerShell error: {stderr.strip()}")
+        
+        if process.returncode != 0:
+            raise RuntimeError(f"Failed to create task. Return code: {process.returncode}\nError: {stderr}")
+    
+    def _create_unix_task(self, wallpapers_dir: str, days_interval: int, time_str: str) -> None:
+        """Create a Unix cron job using shell script."""
+        # Make the script executable
+        os.chmod(self.cron_script, 0o755)
+        
+        # Run the shell script with the parameters
+        cmd = [
+            self.cron_script,
+            wallpapers_dir,
+            str(days_interval),
+            time_str
         ]
         
         result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"Failed to create task: {result.stderr}")
-    
-    def _create_unix_task(self, script_path: str, wallpapers_dir: str, 
-                         days_interval: int, time_str: str) -> None:
-        """Create a Unix cron job (Linux or macOS)."""
-        # Get current crontab
-        result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
-        current_crontab = result.stdout if result.returncode == 0 else ""
-        
-        # Remove any existing wallpaper rotation entries
-        lines = current_crontab.splitlines()
-        lines = [line for line in lines if 'set_wallpaper.py.*--rotate' not in line]
-        
-        # Add new cron job
-        hour, minute = map(int, time_str.split(':'))
-        # Use python3 for Linux, python for macOS (as macOS typically has python3 as python)
-        python_cmd = 'python3' if self.system == 'linux' else 'python'
-        cron_line = f"{minute} {hour} */{days_interval} * * {python_cmd} \"{script_path}\" --rotate \"{wallpapers_dir}\" --min-days {days_interval} >> \"{wallpapers_dir}/wallpaper_rotation.log\" 2>&1"
-        lines.append(cron_line)
-        
-        # Install new crontab
-        new_crontab = '\n'.join(lines) + '\n'
-        result = subprocess.run(['crontab', '-'], input=new_crontab, text=True, capture_output=True)
         if result.returncode != 0:
             raise RuntimeError(f"Failed to create cron job: {result.stderr}")
     
     def _remove_windows_task(self) -> None:
         """Remove the Windows scheduled task."""
         result = subprocess.run(['schtasks', '/delete', '/tn', 'RotateWallpaper', '/f'], 
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, encoding='cp1252', errors='replace')
         if result.returncode != 0:
             raise RuntimeError(f"Failed to remove task: {result.stderr}")
     
     def _remove_unix_task(self) -> None:
-        """Remove the Unix cron job (Linux or macOS)."""
+        """Remove the Unix cron job."""
         # Get current crontab
         result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
         if result.returncode == 0:

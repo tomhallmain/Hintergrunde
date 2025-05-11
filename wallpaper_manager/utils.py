@@ -1,6 +1,30 @@
 #!/usr/bin/env python3
 import sys
 import subprocess
+import os
+from pathlib import Path
+
+def get_default_media_folder():
+    """Get the default media folder for the current OS.
+    
+    Returns:
+        Path: Path to the default media folder for the current OS.
+        Common locations:
+        - Windows: %USERPROFILE%\Pictures
+        - macOS: ~/Pictures
+        - Linux: ~/Pictures
+    """
+    system = sys.platform.lower()
+    
+    if system.startswith('win'):
+        # Windows: Use Pictures folder
+        return Path(os.path.expandvars('%USERPROFILE%')) / 'Pictures'
+    elif system.startswith('darwin'):
+        # macOS: Use Pictures folder
+        return Path.home() / 'Pictures'
+    else:
+        # Linux and others: Use Pictures folder
+        return Path.home() / 'Pictures'
 
 def check_powershell_execution_policy():
     """Check if PowerShell execution policy might block the script."""
