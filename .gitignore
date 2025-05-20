@@ -1,2 +1,8 @@
-__pycache__/
+__pycache__
 .wallpaper_manager_config.json
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
