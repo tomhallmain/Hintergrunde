@@ -50,7 +50,7 @@ if (-not (Test-Path $WallpapersDir -PathType Container)) {
 }
 
 # Create the task action with the same interval for both the task and the script
-$action = New-ScheduledTaskAction -Execute "python" -Argument "`"$wallpaperScript`" --rotate `"$WallpapersDir`" --min-days $DaysInterval"
+$action = New-ScheduledTaskAction -Execute "python" -Argument "`"$wallpaperScript`" --rotate `"$WallpapersDir`" --min-days $DaysInterval --no-force"
 
 # Create the task trigger
 $trigger = New-ScheduledTaskTrigger -Daily -At $Time

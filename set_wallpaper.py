@@ -10,10 +10,11 @@ def print_help():
     print("  Set specific wallpaper:")
     print("    python set_wallpaper.py <path_to_image> [--scaling-mode MODE]")
     print("\n  Rotate wallpaper:")
-    print("    python set_wallpaper.py --rotate <path_to_image_directory> [--min-days DAYS]")
+    print("    python set_wallpaper.py --rotate <path_to_image_directory> [--min-days DAYS] [--no-force]")
     print("\nOptions:")
     print("  --rotate           Enable wallpaper rotation mode")
     print("  --min-days DAYS    Minimum days between wallpaper repeats (default: 7)")
+    print("  --no-force         Respect minimum days between rotations (default: force rotation)")
     print("  --scaling-mode MODE  How to scale the wallpaper (default: auto)")
     print("                      Available modes: fill, fit, stretch, auto")
     print("  -h, --help        Show this help message")
@@ -23,6 +24,8 @@ def print_help():
     print("    python set_wallpaper.py C:/Pictures/wallpaper.jpg --scaling-mode fit")
     print("\n  Rotate wallpapers every 3 days:")
     print("    python set_wallpaper.py --rotate C:/Pictures/Wallpapers --min-days 3")
+    print("\n  Respect minimum days between rotations:")
+    print("    python set_wallpaper.py --rotate C:/Pictures/Wallpapers --no-force")
 
 def main():
     # Check for help flag first
@@ -34,6 +37,7 @@ def main():
     parser = argparse.ArgumentParser(description="Wallpaper Manager - A cross-platform wallpaper management tool")
     parser.add_argument('--rotate', action='store_true', help='Enable wallpaper rotation mode')
     parser.add_argument('--min-days', type=int, default=7, help='Minimum days between wallpaper repeats (default: 7)')
+    parser.add_argument('--no-force', action='store_true', help='Respect minimum days between rotations (default: force rotation)')
     parser.add_argument('--scaling-mode', type=str, default='auto',
                       help='How to scale the wallpaper (fill, fit, stretch, or auto)')
     parser.add_argument('path', nargs='?', help='Path to image file or directory (for rotation mode)')
@@ -58,7 +62,7 @@ def main():
             print("Error: Please specify an image directory for rotation")
             print_help()
             sys.exit(1)
-        rotate_wallpaper(args.path, args.min_days)
+        rotate_wallpaper(args.path, args.min_days, force=not args.no_force)
     else:
         if not args.path:
             print("Error: Please specify an image file")

@@ -78,7 +78,7 @@ fi
 
 # Add the new cron job (runs at specified time every X days)
 echo "# Wallpaper rotation task" >> "$TEMP_CRON"
-echo "$MINUTE $HOUR */$DAYS_INTERVAL * * python3 \"$WALLPAPER_SCRIPT\" --rotate \"$WALLPAPERS_DIR\" --min-days $DAYS_INTERVAL >> \"$WALLPAPERS_DIR/wallpaper_rotation.log\" 2>&1" >> "$TEMP_CRON"
+echo "$MINUTE $HOUR */$DAYS_INTERVAL * * python3 \"$WALLPAPER_SCRIPT\" --rotate \"$WALLPAPERS_DIR\" --min-days $DAYS_INTERVAL --no-force >> \"$WALLPAPERS_DIR/wallpaper_rotation.log\" 2>&1" >> "$TEMP_CRON"
 
 # Install the new crontab
 if ! crontab "$TEMP_CRON"; then

@@ -270,8 +270,26 @@ def set_wallpaper(image_path, scaling_mode=None):
         print(f"Error setting wallpaper: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
-def rotate_wallpaper(image_dir, min_days_between_repeats=7):
-    """Rotate the wallpaper using the WallpaperRotator."""
+def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False):
+    """Rotate the wallpaper from the specified directory.
+    
+    Args:
+        image_dir: Path to the directory containing wallpapers
+        min_days_between_repeats: Minimum number of days between wallpaper changes
+        force: If True, ignore the minimum days check and rotate anyway
+    """
     rotator = WallpaperRotator(image_dir)
+    
+    # Check if enough time has passed since the last rotation
+    if not force and rotator.cache['last_change'] is not None:
+        current_time = time.time()
+        time_since_last = current_time - rotator.cache['last_change']
+        min_seconds = min_days_between_repeats * 24 * 3600
+        
+        if time_since_last < min_seconds:
+            print(f"Skipping rotation: {min_days_between_repeats} days have not elapsed since last change")
+            return
+    
+    # If we get here, either force is True, there's no history, or enough time has passed
     next_wallpaper = rotator.select_next_wallpaper(min_days_between_repeats)
     set_wallpaper(next_wallpaper) 
