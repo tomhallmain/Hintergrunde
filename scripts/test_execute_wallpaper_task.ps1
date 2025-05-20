@@ -12,8 +12,8 @@ if (-not (Test-Path $WallpapersDir -PathType Container)) {
     exit 1
 }
 
-# Create the task action
-$action = New-ScheduledTaskAction -Execute "python" -Argument "`"$wallpaperScript`" --rotate `"$WallpapersDir`""
+# Create the task action with the same parameters as the main task
+$action = New-ScheduledTaskAction -Execute "python" -Argument "`"$wallpaperScript`" --rotate `"$WallpapersDir`" --min-days 7"
 
 # Create a one-time trigger that runs immediately
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-import sys
 import os
+import sys
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
@@ -9,10 +9,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTimeEdit, QCheckBox)
 from PySide6.QtCore import Qt, QTime
 from PySide6.QtGui import QPixmap, QImage
-
-# Import the wallpaper functionality from the package
-from wallpaper_manager import (WallpaperRotator, set_wallpaper, TaskScheduler, 
-                             Config, DropPreviewLabel)
+from wallpaper_manager.ui import DropPreviewLabel
+from wallpaper_manager import set_wallpaper, rotate_wallpaper, WallpaperRotator, ScalingMode, TaskScheduler, Config
 
 class WallpaperGUI(QMainWindow):
     def __init__(self):
