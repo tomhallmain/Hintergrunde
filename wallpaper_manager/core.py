@@ -9,6 +9,10 @@ import time
 from pathlib import Path
 from enum import Enum, auto
 from .utils import check_powershell_execution_policy, check_linux_dependencies
+from .logger import setup_logger
+
+# Set up logger for this module
+logger = setup_logger('wallpaper_manager.core')
 
 class ScalingMode(Enum):
     """Enum for wallpaper scaling modes."""
@@ -79,23 +83,47 @@ class WallpaperRotator:
         if os.path.exists(self.cache_file):
             try:
                 with open(self.cache_file, 'r') as f:
-                    return json.load(f)
-            except json.JSONDecodeError:
+                    cache = json.load(f)
+                # Validate cache structure
+                required_keys = {
+                    'last_wallpaper', 'last_lock_screen',
+                    'last_wallpaper_change', 'last_lock_screen_change',
+                    'wallpaper_history', 'lock_screen_history'
+                }
+                if not all(key in cache for key in required_keys):
+                    logger.warning(f"Cache file {self.cache_file} is missing required keys. Recreating cache.")
+                    os.remove(self.cache_file)
+                    return self._create_new_cache()
+                return cache
+            except (json.JSONDecodeError, KeyError) as e:
+                logger.warning(f"Invalid cache file {self.cache_file}: {str(e)}. Recreating cache.")
+                try:
+                    os.remove(self.cache_file)
+                except OSError:
+                    pass  # Ignore if file can't be removed
                 return self._create_new_cache()
         return self._create_new_cache()
     
     def _create_new_cache(self):
         """Create a new cache structure."""
+        logger.info("Creating new cache file")
         return {
             'last_wallpaper': None,
-            'last_change': None,
-            'history': []
+            'last_lock_screen': None,
+            'last_wallpaper_change': None,
+            'last_lock_screen_change': None,
+            'wallpaper_history': [],
+            'lock_screen_history': []
         }
     
     def _save_cache(self):
         """Save the current cache to file."""
-        with open(self.cache_file, 'w') as f:
-            json.dump(self.cache, f, indent=2)
+        try:
+            with open(self.cache_file, 'w') as f:
+                json.dump(self.cache, f, indent=2)
+        except OSError as e:
+            logger.error(f"Failed to save cache file: {str(e)}")
+            # Continue execution even if cache save fails
     
     def get_available_images(self):
         """Get all supported images in the directory."""
@@ -114,7 +142,7 @@ class WallpaperRotator:
         # Filter out recently used wallpapers
         current_time = time.time()
         recent_wallpapers = {
-            entry['path'] for entry in self.cache['history']
+            entry['path'] for entry in self.cache['wallpaper_history']
             if current_time - entry['timestamp'] < (min_days_between_repeats * 24 * 3600)
         }
         
@@ -128,14 +156,49 @@ class WallpaperRotator:
         
         # Update cache
         self.cache['last_wallpaper'] = selected_image
-        self.cache['last_change'] = current_time
-        self.cache['history'].append({
+        self.cache['last_wallpaper_change'] = current_time
+        self.cache['wallpaper_history'].append({
             'path': selected_image,
             'timestamp': current_time
         })
         
         # Keep only last 100 entries in history
-        self.cache['history'] = self.cache['history'][-100:]
+        self.cache['wallpaper_history'] = self.cache['wallpaper_history'][-100:]
+        
+        self._save_cache()
+        return selected_image
+
+    def select_next_lock_screen(self, min_days_between_repeats=7):
+        """Select the next lock screen image using a random strategy with history tracking."""
+        available_images = self.get_available_images()
+        if not available_images:
+            raise ValueError(f"No supported images found in {self.image_dir}")
+        
+        # Filter out recently used lock screen images
+        current_time = time.time()
+        recent_lock_screens = {
+            entry['path'] for entry in self.cache['lock_screen_history']
+            if current_time - entry['timestamp'] < (min_days_between_repeats * 24 * 3600)
+        }
+        
+        eligible_images = [img for img in available_images if img not in recent_lock_screens]
+        
+        # If all images have been used recently, use any image
+        if not eligible_images:
+            eligible_images = available_images
+        
+        selected_image = random.choice(eligible_images)
+        
+        # Update cache
+        self.cache['last_lock_screen'] = selected_image
+        self.cache['last_lock_screen_change'] = current_time
+        self.cache['lock_screen_history'].append({
+            'path': selected_image,
+            'timestamp': current_time
+        })
+        
+        # Keep only last 100 entries in history
+        self.cache['lock_screen_history'] = self.cache['lock_screen_history'][-100:]
         
         self._save_cache()
         return selected_image
@@ -156,6 +219,7 @@ def get_scaling_mode(image_path):
 
 def set_windows_wallpaper(image_path, scaling_mode=ScalingMode.FILL):
     """Set wallpaper on Windows using PowerShell."""
+    logger.info(f"Setting Windows wallpaper: {image_path} with scaling mode {scaling_mode}")
     # Convert to absolute path
     abs_path = str(Path(image_path).resolve())
     
@@ -185,8 +249,9 @@ def set_windows_wallpaper(image_path, scaling_mode=ScalingMode.FILL):
     
     try:
         subprocess.run(['powershell', '-Command', ps_command], check=True, capture_output=True)
+        logger.info("Successfully set Windows wallpaper")
     except subprocess.CalledProcessError as e:
-        print(f"Warning: PowerShell command failed: {str(e)}", file=sys.stderr)
+        logger.error(f"PowerShell command failed: {str(e)}")
         raise
 
 def set_macos_wallpaper(image_path, scaling_mode=ScalingMode.FILL):
@@ -236,18 +301,23 @@ def set_wallpaper(image_path, scaling_mode=None):
         scaling_mode: Optional ScalingMode enum value. If None, the mode will be
                      determined automatically based on the image aspect ratio.
     """
+    logger.info(f"Setting wallpaper: {image_path}")
     if not os.path.exists(image_path):
+        logger.error(f"Image file not found: {image_path}")
         raise FileNotFoundError(f"Image file not found: {image_path}")
     
     # Check file permissions
     if not os.access(image_path, os.R_OK):
+        logger.error(f"Cannot read image file: {image_path}")
         raise PermissionError(f"Cannot read image file: {image_path}")
     
     # If no scaling mode specified, determine it based on image dimensions
     if scaling_mode is None:
         scaling_mode = get_scaling_mode(image_path)
+        logger.info(f"Auto-determined scaling mode: {scaling_mode}")
     
     system = platform.system().lower()
+    logger.info(f"Detected operating system: {system}")
     
     # Run OS-specific checks
     if system == 'windows':
@@ -263,10 +333,13 @@ def set_wallpaper(image_path, scaling_mode=None):
         elif system == 'linux':
             set_linux_wallpaper(image_path, scaling_mode)
         else:
+            logger.error(f"Unsupported operating system: {system}")
             raise RuntimeError(f"Unsupported operating system: {system}")
         
+        logger.info(f"Successfully set wallpaper to: {image_path}")
         print(f"Successfully set wallpaper to: {image_path}")
     except Exception as e:
+        logger.error(f"Error setting wallpaper: {str(e)}")
         print(f"Error setting wallpaper: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
@@ -278,18 +351,105 @@ def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False):
         min_days_between_repeats: Minimum number of days between wallpaper changes
         force: If True, ignore the minimum days check and rotate anyway
     """
+    logger.info(f"Rotating wallpaper from directory: {image_dir}")
     rotator = WallpaperRotator(image_dir)
     
     # Check if enough time has passed since the last rotation
-    if not force and rotator.cache['last_change'] is not None:
+    if not force and rotator.cache['last_wallpaper_change'] is not None:
         current_time = time.time()
-        time_since_last = current_time - rotator.cache['last_change']
+        time_since_last = current_time - rotator.cache['last_wallpaper_change']
         min_seconds = min_days_between_repeats * 24 * 3600
         
         if time_since_last < min_seconds:
+            logger.info(f"Skipping rotation: {min_days_between_repeats} days have not elapsed since last change")
             print(f"Skipping rotation: {min_days_between_repeats} days have not elapsed since last change")
             return
     
     # If we get here, either force is True, there's no history, or enough time has passed
     next_wallpaper = rotator.select_next_wallpaper(min_days_between_repeats)
-    set_wallpaper(next_wallpaper) 
+    logger.info(f"Selected next wallpaper: {next_wallpaper}")
+    set_wallpaper(next_wallpaper)
+
+def set_windows_lock_screen(image_path):
+    """Set lock screen image on Windows using PowerShell."""
+    logger.info(f"Setting Windows lock screen: {image_path}")
+    # Convert to absolute path
+    abs_path = str(Path(image_path).resolve())
+    
+    # PowerShell command to set lock screen
+    ps_command = f'''
+    $LockScreenPath = "HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\PersonalizationCSP"
+    $LockScreenImagePath = "$LockScreenPath\\LockScreenImagePath"
+    $LockScreenImageStatus = "$LockScreenPath\\LockScreenImageStatus"
+    $LockScreenImageUrl = "$LockScreenPath\\LockScreenImageUrl"
+    
+    # Create the registry keys if they don't exist
+    if (!(Test-Path $LockScreenPath)) {{
+        New-Item -Path $LockScreenPath -Force | Out-Null
+    }}
+    
+    # Set the lock screen image
+    Set-ItemProperty -Path $LockScreenPath -Name "LockScreenImagePath" -Value "{abs_path}" -Type String -Force
+    Set-ItemProperty -Path $LockScreenPath -Name "LockScreenImageStatus" -Value 1 -Type DWord -Force
+    Set-ItemProperty -Path $LockScreenPath -Name "LockScreenImageUrl" -Value "" -Type String -Force
+    '''
+    
+    try:
+        subprocess.run(['powershell', '-Command', ps_command], check=True, capture_output=True)
+        logger.info("Successfully set Windows lock screen")
+    except subprocess.CalledProcessError as e:
+        logger.error(f"PowerShell command failed: {str(e)}")
+        raise
+
+def set_lock_screen(image_path):
+    """Set lock screen image based on the current operating system.
+    
+    Args:
+        image_path: Path to the image file
+    """
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"Image file not found: {image_path}")
+    
+    # Check file permissions
+    if not os.access(image_path, os.R_OK):
+        raise PermissionError(f"Cannot read image file: {image_path}")
+    
+    system = platform.system().lower()
+    
+    try:
+        if system == 'windows':
+            set_windows_lock_screen(image_path)
+        else:
+            raise RuntimeError(f"Lock screen setting not supported on {system}")
+        
+        print(f"Successfully set lock screen to: {image_path}")
+    except Exception as e:
+        print(f"Error setting lock screen: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+def rotate_lock_screen(image_dir, min_days_between_repeats=7, force=False):
+    """Rotate the lock screen image from the specified directory.
+    
+    Args:
+        image_dir: Path to the directory containing images
+        min_days_between_repeats: Minimum number of days between image changes
+        force: If True, ignore the minimum days check and rotate anyway
+    """
+    logger.info(f"Rotating lock screen from directory: {image_dir}")
+    rotator = WallpaperRotator(image_dir)
+    
+    # Check if enough time has passed since the last rotation
+    if not force and rotator.cache['last_lock_screen_change'] is not None:
+        current_time = time.time()
+        time_since_last = current_time - rotator.cache['last_lock_screen_change']
+        min_seconds = min_days_between_repeats * 24 * 3600
+        
+        if time_since_last < min_seconds:
+            logger.info(f"Skipping lock screen rotation: {min_days_between_repeats} days have not elapsed since last change")
+            print(f"Skipping lock screen rotation: {min_days_between_repeats} days have not elapsed since last change")
+            return
+    
+    # If we get here, either force is True, there's no history, or enough time has passed
+    next_image = rotator.select_next_lock_screen(min_days_between_repeats)
+    logger.info(f"Selected next lock screen image: {next_image}")
+    set_lock_screen(next_image) 
