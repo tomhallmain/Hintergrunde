@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-import os
-import sys
-import platform
-import subprocess
-import random
-import json
-import time
-from pathlib import Path
+from datetime import datetime, timedelta
 from enum import Enum, auto
+import json
+import os
+from pathlib import Path
+import platform
+import random
+import subprocess
+import sys
+import time
 from .utils import check_powershell_execution_policy, check_linux_dependencies
 from .logger import setup_logger
 
@@ -356,13 +357,23 @@ def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False):
     
     # Check if enough time has passed since the last rotation
     if not force and rotator.cache['last_wallpaper_change'] is not None:
-        current_time = time.time()
-        time_since_last = current_time - rotator.cache['last_wallpaper_change']
-        min_seconds = min_days_between_repeats * 24 * 3600
+        current_dt = datetime.now()
+        last_change_dt = datetime.fromtimestamp(rotator.cache['last_wallpaper_change'])
         
-        if time_since_last < min_seconds:
-            logger.info(f"Skipping rotation: {min_days_between_repeats} days have not elapsed since last change")
-            print(f"Skipping rotation: {min_days_between_repeats} days have not elapsed since last change")
+        # Calculate next rotation time
+        next_rotation_dt = last_change_dt + timedelta(days=min_days_between_repeats)
+        next_rotation_dt = _adjust_rotation_time(next_rotation_dt)
+        
+        if current_dt < next_rotation_dt:
+            logger.info(
+                f"Skipping rotation: {min_days_between_repeats} days have not elapsed since last change. "
+                f"Current time: {current_dt.strftime('%Y-%m-%d %H:%M:%S')}, "
+                f"Next rotation available: {next_rotation_dt.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            print(
+                f"Skipping rotation: {min_days_between_repeats} days have not elapsed since last change. "
+                f"Next rotation available: {next_rotation_dt.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
             return
     
     # If we get here, either force is True, there's no history, or enough time has passed
@@ -440,16 +451,39 @@ def rotate_lock_screen(image_dir, min_days_between_repeats=7, force=False):
     
     # Check if enough time has passed since the last rotation
     if not force and rotator.cache['last_lock_screen_change'] is not None:
-        current_time = time.time()
-        time_since_last = current_time - rotator.cache['last_lock_screen_change']
-        min_seconds = min_days_between_repeats * 24 * 3600
+        current_dt = datetime.now()
+        last_change_dt = datetime.fromtimestamp(rotator.cache['last_lock_screen_change'])
         
-        if time_since_last < min_seconds:
-            logger.info(f"Skipping lock screen rotation: {min_days_between_repeats} days have not elapsed since last change")
-            print(f"Skipping lock screen rotation: {min_days_between_repeats} days have not elapsed since last change")
+        # Calculate next rotation time
+        next_rotation_dt = last_change_dt + timedelta(days=min_days_between_repeats)
+        next_rotation_dt = _adjust_rotation_time(next_rotation_dt)
+
+        if current_dt < next_rotation_dt:
+            logger.info(
+                f"Skipping lock screen rotation: {min_days_between_repeats} days have not elapsed since last change. "
+                f"Current time: {current_dt.strftime('%Y-%m-%d %H:%M:%S')}, "
+                f"Next rotation available: {next_rotation_dt.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            print(
+                f"Skipping lock screen rotation: {min_days_between_repeats} days have not elapsed since last change. "
+                f"Next rotation available: {next_rotation_dt.strftime('%Y-%m-%d %H:%M:%S')}"
+            )
             return
     
     # If we get here, either force is True, there's no history, or enough time has passed
     next_image = rotator.select_next_lock_screen(min_days_between_repeats)
     logger.info(f"Selected next lock screen image: {next_image}")
-    set_lock_screen(next_image) 
+    set_lock_screen(next_image)
+
+
+def _adjust_rotation_time(next_rotation_dt):
+    """Adjust the next rotation time to start of day, normalize based on hour."""
+    if next_rotation_dt.hour < 18:
+        # If before 6 PM, set to start of current day
+        next_rotation_dt = next_rotation_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        # If after 6 PM, set to start of next day
+        next_rotation_dt = (next_rotation_dt + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return next_rotation_dt
+
+
