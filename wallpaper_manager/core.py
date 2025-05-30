@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 from datetime import datetime, timedelta
-from enum import Enum, auto
-import json
 import os
 from pathlib import Path
 import platform
@@ -9,122 +7,22 @@ import random
 import subprocess
 import sys
 import time
-from .utils import check_powershell_execution_policy, check_linux_dependencies
+
+from .constants import ChangeSource, ScalingMode
 from .logger import setup_logger
+from .utils import check_powershell_execution_policy, check_linux_dependencies
+from .wallpaper_cache import WallpaperCache
 
 # Set up logger for this module
 logger = setup_logger('wallpaper_manager.core')
 
-class ScalingMode(Enum):
-    """Enum for wallpaper scaling modes."""
-    FILL = auto()    # Fill the screen, may crop
-    FIT = auto()     # Fit the screen, may have letterboxing
-    STRETCH = auto() # Stretch to fill, may distort
-
-    def get_macos_option(self) -> str:
-        """Get the corresponding macOS scaling option."""
-        return {
-            ScalingMode.FILL: 'fill',
-            ScalingMode.FIT: 'fit',
-            ScalingMode.STRETCH: 'stretch'
-        }[self]
-
-    def get_gnome_option(self) -> str:
-        """Get the corresponding GNOME scaling option."""
-        return {
-            ScalingMode.FILL: 'zoom',
-            ScalingMode.FIT: 'scaled',
-            ScalingMode.STRETCH: 'stretched'
-        }[self]
-
-    def get_feh_option(self) -> str:
-        """Get the corresponding feh scaling option."""
-        return '--bg-scale' if self == ScalingMode.FIT else '--bg-fill'
-
-    def get_windows_style(self) -> int:
-        """Get the corresponding Windows wallpaper style.
-        
-        Windows styles:
-        0 = Center
-        1 = Stretch
-        2 = Tile
-        3 = Fit
-        4 = Fill
-        5 = Span
-        """
-        return {
-            ScalingMode.FILL: 4,    # Fill
-            ScalingMode.FIT: 3,     # Fit
-            ScalingMode.STRETCH: 1  # Stretch
-        }[self]
-
-    @classmethod
-    def from_string(cls, mode_str: str) -> 'ScalingMode':
-        """Convert string to ScalingMode enum value."""
-        mode_map = {
-            'fill': cls.FILL,
-            'fit': cls.FIT,
-            'stretch': cls.STRETCH,
-            'auto': None  # None means let the function determine the mode
-        }
-        mode_str = mode_str.lower()
-        if mode_str not in mode_map:
-            raise ValueError(f"Invalid scaling mode: {mode_str}. Must be one of: {', '.join(mode_map.keys())}")
-        return mode_map[mode_str]
 
 class WallpaperRotator:
     def __init__(self, image_dir, cache_file=None):
         self.image_dir = Path(image_dir)
         self.cache_file = cache_file or str(self.image_dir / '.wallpaper_cache.json')
         self.supported_formats = {'.jpg', '.jpeg', '.png', '.bmp'}
-        self.cache = self._load_cache()
-    
-    def _load_cache(self):
-        """Load the cache file if it exists."""
-        if os.path.exists(self.cache_file):
-            try:
-                with open(self.cache_file, 'r') as f:
-                    cache = json.load(f)
-                # Validate cache structure
-                required_keys = {
-                    'last_wallpaper', 'last_lock_screen',
-                    'last_wallpaper_change', 'last_lock_screen_change',
-                    'wallpaper_history', 'lock_screen_history'
-                }
-                if not all(key in cache for key in required_keys):
-                    logger.warning(f"Cache file {self.cache_file} is missing required keys. Recreating cache.")
-                    os.remove(self.cache_file)
-                    return self._create_new_cache()
-                return cache
-            except (json.JSONDecodeError, KeyError) as e:
-                logger.warning(f"Invalid cache file {self.cache_file}: {str(e)}. Recreating cache.")
-                try:
-                    os.remove(self.cache_file)
-                except OSError:
-                    pass  # Ignore if file can't be removed
-                return self._create_new_cache()
-        return self._create_new_cache()
-    
-    def _create_new_cache(self):
-        """Create a new cache structure."""
-        logger.info("Creating new cache file")
-        return {
-            'last_wallpaper': None,
-            'last_lock_screen': None,
-            'last_wallpaper_change': None,
-            'last_lock_screen_change': None,
-            'wallpaper_history': [],
-            'lock_screen_history': []
-        }
-    
-    def _save_cache(self):
-        """Save the current cache to file."""
-        try:
-            with open(self.cache_file, 'w') as f:
-                json.dump(self.cache, f, indent=2)
-        except OSError as e:
-            logger.error(f"Failed to save cache file: {str(e)}")
-            # Continue execution even if cache save fails
+        self.cache = WallpaperCache(self.cache_file)
     
     def get_available_images(self):
         """Get all supported images in the directory."""
@@ -134,8 +32,13 @@ class WallpaperRotator:
             images.extend(self.image_dir.glob(f'*{ext.upper()}'))
         return [str(img) for img in images if img.is_file()]
     
-    def select_next_wallpaper(self, min_days_between_repeats=7):
-        """Select the next wallpaper using a random strategy with history tracking."""
+    def select_next_wallpaper(self, min_days_between_repeats=7, source=ChangeSource.MANUAL):
+        """Select the next wallpaper using a random strategy with history tracking.
+        
+        Args:
+            min_days_between_repeats: Minimum number of days between wallpaper changes
+            source: Source of the wallpaper change (manual or automated)
+        """
         available_images = self.get_available_images()
         if not available_images:
             raise ValueError(f"No supported images found in {self.image_dir}")
@@ -143,8 +46,8 @@ class WallpaperRotator:
         # Filter out recently used wallpapers
         current_time = time.time()
         recent_wallpapers = {
-            entry['path'] for entry in self.cache['wallpaper_history']
-            if current_time - entry['timestamp'] < (min_days_between_repeats * 24 * 3600)
+            entry.path for entry in self.cache.wallpaper_history
+            if current_time - entry.timestamp < (min_days_between_repeats * 24 * 3600)
         }
         
         eligible_images = [img for img in available_images if img not in recent_wallpapers]
@@ -156,21 +59,17 @@ class WallpaperRotator:
         selected_image = random.choice(eligible_images)
         
         # Update cache
-        self.cache['last_wallpaper'] = selected_image
-        self.cache['last_wallpaper_change'] = current_time
-        self.cache['wallpaper_history'].append({
-            'path': selected_image,
-            'timestamp': current_time
-        })
+        self.cache.add_wallpaper_to_history(selected_image, source=source)
         
-        # Keep only last 100 entries in history
-        self.cache['wallpaper_history'] = self.cache['wallpaper_history'][-100:]
-        
-        self._save_cache()
         return selected_image
 
-    def select_next_lock_screen(self, min_days_between_repeats=7):
-        """Select the next lock screen image using a random strategy with history tracking."""
+    def select_next_lock_screen(self, min_days_between_repeats=7, source=ChangeSource.MANUAL):
+        """Select the next lock screen image using a random strategy with history tracking.
+        
+        Args:
+            min_days_between_repeats: Minimum number of days between image changes
+            source: Source of the lock screen change (manual or automated)
+        """
         available_images = self.get_available_images()
         if not available_images:
             raise ValueError(f"No supported images found in {self.image_dir}")
@@ -178,8 +77,8 @@ class WallpaperRotator:
         # Filter out recently used lock screen images
         current_time = time.time()
         recent_lock_screens = {
-            entry['path'] for entry in self.cache['lock_screen_history']
-            if current_time - entry['timestamp'] < (min_days_between_repeats * 24 * 3600)
+            entry.path for entry in self.cache.lock_screen_history
+            if current_time - entry.timestamp < (min_days_between_repeats * 24 * 3600)
         }
         
         eligible_images = [img for img in available_images if img not in recent_lock_screens]
@@ -191,17 +90,8 @@ class WallpaperRotator:
         selected_image = random.choice(eligible_images)
         
         # Update cache
-        self.cache['last_lock_screen'] = selected_image
-        self.cache['last_lock_screen_change'] = current_time
-        self.cache['lock_screen_history'].append({
-            'path': selected_image,
-            'timestamp': current_time
-        })
+        self.cache.add_lock_screen_to_history(selected_image, source=source)
         
-        # Keep only last 100 entries in history
-        self.cache['lock_screen_history'] = self.cache['lock_screen_history'][-100:]
-        
-        self._save_cache()
         return selected_image
 
 def get_scaling_mode(image_path):
@@ -294,7 +184,7 @@ def set_linux_wallpaper(image_path, scaling_mode=ScalingMode.FILL):
     
     raise RuntimeError("Could not set wallpaper. Neither gsettings nor feh is available.")
 
-def set_wallpaper(image_path, scaling_mode=None):
+def set_wallpaper(image_path, scaling_mode=ScalingMode.AUTO):
     """Set wallpaper based on the current operating system.
     
     Args:
@@ -313,7 +203,7 @@ def set_wallpaper(image_path, scaling_mode=None):
         raise PermissionError(f"Cannot read image file: {image_path}")
     
     # If no scaling mode specified, determine it based on image dimensions
-    if scaling_mode is None:
+    if scaling_mode is None or scaling_mode == ScalingMode.AUTO:
         scaling_mode = get_scaling_mode(image_path)
         logger.info(f"Auto-determined scaling mode: {scaling_mode}")
     
@@ -344,21 +234,22 @@ def set_wallpaper(image_path, scaling_mode=None):
         print(f"Error setting wallpaper: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
-def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False):
+def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False, source=ChangeSource.MANUAL):
     """Rotate the wallpaper from the specified directory.
     
     Args:
         image_dir: Path to the directory containing wallpapers
         min_days_between_repeats: Minimum number of days between wallpaper changes
         force: If True, ignore the minimum days check and rotate anyway
+        source: Source of the wallpaper change (manual or automated)
     """
     logger.info(f"Rotating wallpaper from directory: {image_dir}")
     rotator = WallpaperRotator(image_dir)
     
     # Check if enough time has passed since the last rotation
-    if not force and rotator.cache['last_wallpaper_change'] is not None:
+    if not force and rotator.cache.has_wallpaper_history():
         current_dt = datetime.now()
-        last_change_dt = datetime.fromtimestamp(rotator.cache['last_wallpaper_change'])
+        last_change_dt = datetime.fromtimestamp(rotator.cache.last_wallpaper_change)
         
         # Calculate next rotation time
         next_rotation_dt = last_change_dt + timedelta(days=min_days_between_repeats)
@@ -377,9 +268,12 @@ def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False):
             return
     
     # If we get here, either force is True, there's no history, or enough time has passed
-    next_wallpaper = rotator.select_next_wallpaper(min_days_between_repeats)
+    next_wallpaper = rotator.select_next_wallpaper(min_days_between_repeats, source=source)
     logger.info(f"Selected next wallpaper: {next_wallpaper}")
-    set_wallpaper(next_wallpaper)
+    
+    # Get the scaling mode from the last change - defaults to AUTO if no last change
+    scaling_mode = rotator.cache.last_wallpaper.scaling_mode
+    set_wallpaper(next_wallpaper, scaling_mode)
 
 def set_windows_lock_screen(image_path):
     """Set lock screen image on Windows using PowerShell."""
@@ -412,11 +306,12 @@ def set_windows_lock_screen(image_path):
         logger.error(f"PowerShell command failed: {str(e)}")
         raise
 
-def set_lock_screen(image_path):
+def set_lock_screen(image_path, scaling_mode=ScalingMode.AUTO):
     """Set lock screen image based on the current operating system.
     
     Args:
         image_path: Path to the image file
+        scaling_mode: How to scale the image (currently not usable)
     """
     if not os.path.exists(image_path):
         raise FileNotFoundError(f"Image file not found: {image_path}")
@@ -438,21 +333,22 @@ def set_lock_screen(image_path):
         print(f"Error setting lock screen: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
-def rotate_lock_screen(image_dir, min_days_between_repeats=7, force=False):
+def rotate_lock_screen(image_dir, min_days_between_repeats=7, force=False, source=ChangeSource.MANUAL):
     """Rotate the lock screen image from the specified directory.
     
     Args:
         image_dir: Path to the directory containing images
         min_days_between_repeats: Minimum number of days between image changes
         force: If True, ignore the minimum days check and rotate anyway
+        source: Source of the lock screen change (manual or automated)
     """
     logger.info(f"Rotating lock screen from directory: {image_dir}")
     rotator = WallpaperRotator(image_dir)
     
     # Check if enough time has passed since the last rotation
-    if not force and rotator.cache['last_lock_screen_change'] is not None:
+    if not force and rotator.cache.has_lock_screen_history():
         current_dt = datetime.now()
-        last_change_dt = datetime.fromtimestamp(rotator.cache['last_lock_screen_change'])
+        last_change_dt = datetime.fromtimestamp(rotator.cache.last_lock_screen_change)
         
         # Calculate next rotation time
         next_rotation_dt = last_change_dt + timedelta(days=min_days_between_repeats)
@@ -471,9 +367,12 @@ def rotate_lock_screen(image_dir, min_days_between_repeats=7, force=False):
             return
     
     # If we get here, either force is True, there's no history, or enough time has passed
-    next_image = rotator.select_next_lock_screen(min_days_between_repeats)
+    next_image = rotator.select_next_lock_screen(min_days_between_repeats, source=source)
     logger.info(f"Selected next lock screen image: {next_image}")
-    set_lock_screen(next_image)
+    
+    # Get the scaling mode from the last change - defaults to AUTO if no last change
+    scaling_mode = rotator.cache.last_lock_screen.scaling_mode
+    set_lock_screen(next_image, scaling_mode)
 
 
 def _adjust_rotation_time(next_rotation_dt):

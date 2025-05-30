@@ -15,13 +15,14 @@ if (-not (Test-Path $WallpapersDir -PathType Container)) {
 # Function to create and run a test task
 function Test-WallpaperRotation {
     param (
-        [string]$Mode = "wallpaper"  # Can be "wallpaper", "lockscreen", or "both"
+        [string]$Mode = "wallpaper",  # Can be "wallpaper", "lockscreen", or "both"
+        [string]$ScalingMode = "auto"  # Can be "fill", "fit", "stretch", or "auto"
     )
     
-    Write-Host "`nTesting $Mode rotation..."
+    Write-Host "`nTesting $Mode rotation with scaling mode: $ScalingMode..."
     
     # Build the command arguments
-    $args = "`"$wallpaperScript`" --min-days 7"
+    $args = "`"$wallpaperScript`" --min-days 7 --no-force --scaling-mode $ScalingMode"
     switch ($Mode) {
         "lockscreen" { $args += " --rotate-lock-screen" }
         "both" { $args += " --rotate-both" }
@@ -40,7 +41,7 @@ function Test-WallpaperRotation {
     
     # Create the task
     $taskName = "Test${Mode}Rotation"
-    $description = "Test run of $Mode rotation"
+    $description = "Test run of $Mode rotation with $ScalingMode scaling"
     
     # Check if task already exists and remove it
     if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
@@ -55,6 +56,7 @@ function Test-WallpaperRotation {
     Write-Host "Task Name: $taskName"
     Write-Host "Description: $description"
     Write-Host "Wallpapers Directory: $WallpapersDir"
+    Write-Host "Scaling Mode: $ScalingMode"
     Write-Host "`nThe task will run in 1 minute. To view the results:"
     Write-Host "1. Open Event Viewer (eventvwr.msc)"
     Write-Host "2. Navigate to: Windows Logs > Application"
@@ -65,7 +67,7 @@ function Test-WallpaperRotation {
     Write-Host "3. Right-click and select 'Run'"
 }
 
-# Test all modes
-Test-WallpaperRotation -Mode "wallpaper"
-Test-WallpaperRotation -Mode "lockscreen"
-Test-WallpaperRotation -Mode "both" 
+# Test all modes with different scaling modes
+Test-WallpaperRotation -Mode "wallpaper" -ScalingMode "fill"
+Test-WallpaperRotation -Mode "lockscreen" -ScalingMode "fit"
+Test-WallpaperRotation -Mode "both" -ScalingMode "stretch" 

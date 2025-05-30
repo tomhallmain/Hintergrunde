@@ -14,12 +14,15 @@ fi
 # Make sure the wallpaper script is executable
 chmod +x "$WALLPAPER_SCRIPT"
 
-# Check if parameters are provided
-if [ $# -eq 3 ]; then
+# Check if all parameters were provided
+params_provided=false
+if [ $# -eq 4 ]; then
+    params_provided=true
     # Use provided parameters
     WALLPAPERS_DIR="$1"
     DAYS_INTERVAL="$2"
     TIME_STR="$3"
+    SCALING_MODE="$4"
 else
     # Get the wallpapers directory from user input
     read -p "Enter the full path to your wallpapers directory: " WALLPAPERS_DIR
@@ -36,6 +39,13 @@ else
     if ! [[ "$TIME_STR" =~ ^([0-1][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
         TIME_STR="09:00"
         echo "Using default time of 09:00"
+    fi
+
+    # Get the scaling mode
+    read -p "Enter the scaling mode (fill/fit/stretch/auto, default: auto): " SCALING_MODE
+    if ! [[ "$SCALING_MODE" =~ ^(fill|fit|stretch|auto)$ ]]; then
+        SCALING_MODE="auto"
+        echo "Using default scaling mode of auto"
     fi
 fi
 
@@ -54,6 +64,12 @@ fi
 # Validate time format
 if ! [[ "$TIME_STR" =~ ^([0-1][0-9]|2[0-3]):[0-5][0-9]$ ]]; then
     echo "Error: Time must be in HH:MM format"
+    exit 1
+fi
+
+# Validate scaling mode
+if ! [[ "$SCALING_MODE" =~ ^(fill|fit|stretch|auto)$ ]]; then
+    echo "Error: Scaling mode must be one of: fill, fit, stretch, auto"
     exit 1
 fi
 
@@ -78,7 +94,7 @@ fi
 
 # Add the new cron job (runs at specified time every X days)
 echo "# Wallpaper rotation task" >> "$TEMP_CRON"
-echo "$MINUTE $HOUR */$DAYS_INTERVAL * * python3 \"$WALLPAPER_SCRIPT\" --rotate \"$WALLPAPERS_DIR\" --min-days $DAYS_INTERVAL --no-force >> \"$WALLPAPERS_DIR/wallpaper_rotation.log\" 2>&1" >> "$TEMP_CRON"
+echo "$MINUTE $HOUR */$DAYS_INTERVAL * * python3 \"$WALLPAPER_SCRIPT\" --rotate \"$WALLPAPERS_DIR\" --min-days $DAYS_INTERVAL --no-force --scaling-mode $SCALING_MODE" >> "$TEMP_CRON"
 
 # Install the new crontab
 if ! crontab "$TEMP_CRON"; then
@@ -91,15 +107,13 @@ fi
 rm "$TEMP_CRON"
 
 # Show success message only in interactive mode
-if [ $# -ne 3 ]; then
+if [ "$params_provided" = false ]; then
     echo -e "\nCron job created successfully!"
     echo "Task: Rotate wallpaper every $DAYS_INTERVAL days at $TIME_STR"
     echo "Wallpapers Directory: $WALLPAPERS_DIR"
-    echo "Log File: $WALLPAPERS_DIR/wallpaper_rotation.log"
+    echo "Scaling Mode: $SCALING_MODE"
     echo -e "\nNote: The task will run every $DAYS_INTERVAL days at $TIME_STR, and the script will only change the wallpaper"
     echo "if it hasn't been changed in the last $DAYS_INTERVAL days (to avoid repeating wallpapers too soon)."
-    echo -e "\nTo view the rotation logs:"
-    echo "cat $WALLPAPERS_DIR/wallpaper_rotation.log"
     echo -e "\nTo modify the schedule:"
     echo "1. Run: crontab -e"
     echo "2. Edit the line starting with '$MINUTE $HOUR'"

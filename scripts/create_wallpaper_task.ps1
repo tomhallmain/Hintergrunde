@@ -2,7 +2,8 @@
 param(
     [string]$WallpapersDir,
     [int]$DaysInterval,
-    [string]$Time
+    [string]$Time,
+    [string]$ScalingMode = "auto"
 )
 
 # Get the current script's directory and go up one level to find set_wallpaper.py
@@ -16,6 +17,7 @@ Write-Host "Debug: Parameters received:"
 Write-Host "WallpapersDir: $WallpapersDir"
 Write-Host "DaysInterval: $DaysInterval"
 Write-Host "Time: $Time"
+Write-Host "ScalingMode: $ScalingMode"
 Write-Host "PSBoundParameters: $($PSBoundParameters | ConvertTo-Json)"
 
 # If parameters are not provided, get them interactively
@@ -50,7 +52,7 @@ if (-not (Test-Path $WallpapersDir -PathType Container)) {
 }
 
 # Create the task action with the same interval for both the task and the script
-$action = New-ScheduledTaskAction -Execute "python" -Argument "`"$wallpaperScript`" --rotate `"$WallpapersDir`" --min-days $DaysInterval --no-force"
+$action = New-ScheduledTaskAction -Execute "python" -Argument "`"$wallpaperScript`" --rotate `"$WallpapersDir`" --min-days $DaysInterval --no-force --scaling-mode $ScalingMode"
 
 # Create the task trigger
 $trigger = New-ScheduledTaskTrigger -Daily -At $Time
@@ -79,6 +81,7 @@ if (-not $PSBoundParameters.ContainsKey('WallpapersDir')) {
     Write-Host "Wallpapers Directory: $WallpapersDir"
     Write-Host "Rotation Interval: $DaysInterval days"
     Write-Host "Rotation Time: $Time"
+    Write-Host "Scaling Mode: $ScalingMode"
     Write-Host "`nNote: The task will run every $DaysInterval days at $Time, and the script will only change the wallpaper"
     Write-Host "if it hasn't been changed in the last $DaysInterval days (to avoid repeating wallpapers too soon)."
     Write-Host "`nTo view task logs:"

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-import sys
-import subprocess
 import os
 from pathlib import Path
+import subprocess
+import sys
 
 def get_default_media_folder():
     """Get the default media folder for the current OS.

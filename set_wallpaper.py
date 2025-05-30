@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-import sys
 import argparse
-import os
 from pathlib import Path
+import sys
+
 from wallpaper_manager import set_wallpaper, rotate_wallpaper, rotate_lock_screen, ScalingMode
 from wallpaper_manager.logger import setup_logger
+from wallpaper_manager.wallpaper_cache import ChangeSource
 
 # Set up logger for this script
 logger = setup_logger('wallpaper_manager.script')
@@ -103,17 +104,19 @@ def main():
         logger.info(f"Rotation mode: {'both' if args.rotate_both else 'lock screen' if args.rotate_lock_screen else 'wallpaper'}")
         logger.info(f"Minimum days between repeats: {args.min_days}")
         logger.info(f"Force rotation: {not args.no_force}")
+        force = not args.no_force
+        source = ChangeSource.AUTOMATED if args.no_force else ChangeSource.MANUAL
         
         if args.rotate_both:
             logger.info("Rotating both wallpaper and lock screen")
-            rotate_wallpaper(args.path, args.min_days, force=not args.no_force)
-            rotate_lock_screen(args.path, args.min_days, force=not args.no_force)
+            rotate_wallpaper(args.path, args.min_days, force=force, source=source)
+            rotate_lock_screen(args.path, args.min_days, force=force, source=source)
         elif args.rotate_lock_screen:
             logger.info("Rotating lock screen only")
-            rotate_lock_screen(args.path, args.min_days, force=not args.no_force)
+            rotate_lock_screen(args.path, args.min_days, force=force, source=source)
         else:  # args.rotate
             logger.info("Rotating wallpaper only")
-            rotate_wallpaper(args.path, args.min_days, force=not args.no_force)
+            rotate_wallpaper(args.path, args.min_days, force=force, source=source)
     else:
         if is_directory:
             logger.error(f"Cannot set directory as wallpaper: {args.path}")

@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
 import os
 import sys
-from pathlib import Path
-from datetime import datetime
+
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QFileDialog, 
                              QSpinBox, QListWidget, QMessageBox, QGroupBox,
-                             QTimeEdit, QCheckBox)
+                             QTimeEdit, QCheckBox, QComboBox)
 from PySide6.QtCore import Qt, QTime
 from PySide6.QtGui import QPixmap, QImage
+
+from wallpaper_manager import set_wallpaper, WallpaperRotator, TaskScheduler, Config
+from wallpaper_manager.constants import ChangeSource, ScalingMode
+from wallpaper_manager.logger import setup_logger
 from wallpaper_manager.ui import DropPreviewLabel
-from wallpaper_manager import set_wallpaper, rotate_wallpaper, WallpaperRotator, ScalingMode, TaskScheduler, Config
+
+
+# Set up logger for this module
+logger = setup_logger('wallpaper_manager.gui')
 
 class WallpaperGUI(QMainWindow):
     def __init__(self):
         super().__init__()
+        logger.info("Initializing WallpaperGUI")
         self.setWindowTitle("Wallpaper Manager")
         self.setMinimumSize(800, 700)
         
@@ -64,6 +71,15 @@ class WallpaperGUI(QMainWindow):
         
         # Controls
         controls_layout = QHBoxLayout()
+        
+        # Scaling mode selection
+        scaling_layout = QHBoxLayout()
+        scaling_layout.addWidget(QLabel("Scaling Mode:"))
+        self.scaling_combo = QComboBox()
+        self.scaling_combo.addItems(['fill', 'fit', 'stretch', 'auto'])
+        self.scaling_combo.setCurrentText('auto')  # Default to AUTO
+        scaling_layout.addWidget(self.scaling_combo)
+        controls_layout.addLayout(scaling_layout)
         
         # Action buttons
         rotate_button = QPushButton("Rotate Wallpaper")
@@ -132,6 +148,7 @@ class WallpaperGUI(QMainWindow):
         # Load last directory if it exists
         last_dir = self.config.get('last_directory')
         if last_dir and os.path.exists(last_dir):
+            logger.info(f"Loading last directory: {last_dir}")
             self.current_directory = last_dir
             self.dir_label.setText(self.current_directory)
             self.rotator = WallpaperRotator(self.current_directory)
@@ -139,9 +156,11 @@ class WallpaperGUI(QMainWindow):
         
         # Check for existing task and update UI
         self.update_task_status()
+        logger.info("WallpaperGUI initialization complete")
     
     def update_task_status(self):
         """Update the task status display and UI state."""
+        logger.debug("Updating task status")
         task_info = self.task_scheduler.get_task_info()
         
         if task_info:
@@ -177,6 +196,7 @@ class WallpaperGUI(QMainWindow):
                 scheduled_time=task_info.get('time'),
                 scheduled_days=task_info.get('days')
             )
+            logger.info(f"Found existing task: {task_info}")
         else:
             # No task exists
             self.schedule_checkbox.setChecked(False)
@@ -192,10 +212,12 @@ class WallpaperGUI(QMainWindow):
                 scheduled_time=None,
                 scheduled_days=None
             )
+            logger.info("No existing task found")
     
     def toggle_scheduling(self, state):
         """Enable/disable scheduling controls based on checkbox state."""
         enabled = bool(state)
+        logger.info(f"Toggling scheduling: {enabled}")
         self.time_edit.setEnabled(enabled)
         self.min_days_spin.setEnabled(enabled)
         self.create_task_button.setEnabled(enabled)
@@ -204,8 +226,10 @@ class WallpaperGUI(QMainWindow):
         if not enabled:
             if self.task_scheduler.check_existing_task():
                 try:
+                    logger.info("Removing existing task")
                     self.task_scheduler.remove_task()
                 except Exception as e:
+                    logger.error(f"Failed to remove scheduled task: {str(e)}")
                     QMessageBox.critical(self, "Error", f"Failed to remove scheduled task: {str(e)}")
                     # Revert checkbox state if task removal failed
                     self.schedule_checkbox.setChecked(True)
@@ -225,6 +249,7 @@ class WallpaperGUI(QMainWindow):
     def create_scheduled_task(self):
         """Create a scheduled task for wallpaper rotation."""
         if not self.current_directory:
+            logger.warning("Attempted to create task without directory selected")
             QMessageBox.warning(self, "Error", "Please select an image directory first")
             return
         
@@ -232,6 +257,9 @@ class WallpaperGUI(QMainWindow):
             script_path = os.path.abspath(__file__)
             time_str = self.time_edit.time().toString("HH:mm")
             days = self.min_days_spin.value()
+            scaling_mode = self.scaling_combo.currentText()
+            
+            logger.info(f"Creating scheduled task: time={time_str}, days={days}, scaling={scaling_mode}")
             
             # Save the current settings to config
             self.config.update(
@@ -239,45 +267,53 @@ class WallpaperGUI(QMainWindow):
                 rotation_time=time_str,
                 scheduling_enabled=True,
                 scheduled_time=time_str,
-                scheduled_days=days
+                scheduled_days=days,
+                scaling_mode=scaling_mode
             )
             
             self.task_scheduler.create_task(
                 script_path=script_path,
                 wallpapers_dir=self.current_directory,
                 days_interval=days,
-                time_str=time_str
+                time_str=time_str,
+                scaling_mode=scaling_mode
             )
             
             # Verify task was created
             if not self.task_scheduler.check_existing_task():
                 raise RuntimeError("Task creation appeared successful but task was not found")
             
+            logger.info("Scheduled task created successfully")
             QMessageBox.information(self, "Success", "Scheduled task created successfully!")
             self.update_task_status()
         except Exception as e:
+            logger.error(f"Failed to create scheduled task: {str(e)}")
             QMessageBox.critical(self, "Error", f"Failed to create scheduled task: {str(e)}")
             # Revert config changes if task creation failed
             self.config.update(
                 scheduling_enabled=False,
                 scheduled_time=None,
-                scheduled_days=None
+                scheduled_days=None,
+                scaling_mode=None
             )
             self.update_task_status()
     
     def remove_scheduled_task(self):
         """Remove the scheduled task."""
         try:
+            logger.info("Removing scheduled task")
             self.task_scheduler.remove_task()
             QMessageBox.information(self, "Success", "Scheduled task removed successfully!")
             self.schedule_checkbox.setChecked(False)
             self.update_task_status()
         except Exception as e:
+            logger.error(f"Failed to remove scheduled task: {str(e)}")
             QMessageBox.critical(self, "Error", f"Failed to remove scheduled task: {str(e)}")
     
     def select_directory(self):
         directory = QFileDialog.getExistingDirectory(self, "Select Image Directory")
         if directory:
+            logger.info(f"Selected directory: {directory}")
             self.current_directory = directory
             self.dir_label.setText(directory)
             self.rotator = WallpaperRotator(directory)
@@ -285,47 +321,66 @@ class WallpaperGUI(QMainWindow):
             
             # Save the selected directory to config
             self.config.set('last_directory', directory)
+        else:
+            logger.info("Directory selection cancelled")
     
     def update_history(self):
         if not self.rotator:
+            logger.debug("Skipping history update - no directory selected")
             return
         
-        self.history_list.clear()
-        for entry in reversed(self.rotator.cache['history']):
-            timestamp = datetime.fromtimestamp(entry['timestamp'])
-            self.history_list.addItem(f"{timestamp.strftime('%Y-%m-%d %H:%M:%S')} - {Path(entry['path']).name}")
+        try:
+            self.history_list.clear()
+            history = self.rotator.cache.get_combined_history()
+            for change in history:
+                self.history_list.addItem(change.format_history_entry())
+            logger.debug(f"Updated history with {len(history)} entries")
+        except Exception as e:
+            logger.error(f"Failed to update history: {str(e)}")
     
     def rotate_wallpaper(self):
         if not self.rotator:
+            logger.warning("Attempted to rotate wallpaper without directory selected")
             QMessageBox.warning(self, "Error", "Please select an image directory first")
             return
         
         try:
-            next_wallpaper = self.rotator.select_next_wallpaper(self.min_days_spin.value())
-            set_wallpaper(next_wallpaper)
+            logger.info("Rotating wallpaper")
+            scaling_mode = ScalingMode.from_string(self.scaling_combo.currentText())
+            next_wallpaper = self.rotator.select_next_wallpaper(self.min_days_spin.value(), source=ChangeSource.MANUAL)
+            set_wallpaper(next_wallpaper, scaling_mode)
             self.update_preview(next_wallpaper)
             self.update_history()
         except Exception as e:
+            logger.error(f"Failed to rotate wallpaper: {str(e)}")
             QMessageBox.critical(self, "Error", str(e))
     
     def update_preview(self, image_path):
         if not os.path.exists(image_path):
+            logger.error(f"Preview image not found: {image_path}")
             self.preview_label.setText("Error: Image not found")
             return
         
-        pixmap = QPixmap(image_path)
-        if pixmap.isNull():
+        try:
+            pixmap = QPixmap(image_path)
+            if pixmap.isNull():
+                logger.error(f"Could not load preview image: {image_path}")
+                self.preview_label.setText("Error: Could not load image")
+                return
+                
+            scaled_pixmap = pixmap.scaled(self.preview_label.size(), 
+                                        Qt.KeepAspectRatio, 
+                                        Qt.SmoothTransformation)
+            self.preview_label.setPixmap(scaled_pixmap)
+            logger.debug(f"Updated preview with image: {image_path}")
+        except Exception as e:
+            logger.error(f"Failed to update preview: {str(e)}")
             self.preview_label.setText("Error: Could not load image")
-            return
-            
-        scaled_pixmap = pixmap.scaled(self.preview_label.size(), 
-                                    Qt.KeepAspectRatio, 
-                                    Qt.SmoothTransformation)
-        self.preview_label.setPixmap(scaled_pixmap)
 
     def set_directory(self, directory):
         """Set the wallpaper directory and update the UI."""
         if directory:
+            logger.info(f"Setting directory: {directory}")
             self.current_directory = directory
             self.dir_label.setText(directory)
             self.rotator = WallpaperRotator(directory)
@@ -333,11 +388,14 @@ class WallpaperGUI(QMainWindow):
             
             # Save the selected directory to config
             self.config.set('last_directory', directory)
+        else:
+            logger.info("Directory setting cancelled")
 
 def main():
     app = QApplication(sys.argv)
     window = WallpaperGUI()
     window.show()
+    logger.info("Starting GUI application")
     sys.exit(app.exec())
 
 if __name__ == '__main__':
