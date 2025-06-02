@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+from datetime import datetime
 import os
 from pathlib import Path
 import subprocess
 import sys
+
 
 def get_default_media_folder():
     """Get the default media folder for the current OS.
@@ -59,3 +61,37 @@ def check_linux_dependencies():
         print("Warning: The following tools are not installed:", ', '.join(missing_tools),
               "\nYou may need to install them for the script to work on your Linux system.",
               file=sys.stderr) 
+
+def format_relative_time(target_date: datetime) -> str:
+    """Format a datetime into a human-readable relative time string.
+    
+    Args:
+        target_date: The target datetime to format
+        
+    Returns:
+        A human-readable string like "today", "tomorrow", "3 days from now", etc.
+    """
+    now = datetime.now()
+    delta = target_date - now.replace(hour=0, minute=0, second=0, microsecond=0)
+    days = delta.days
+    
+    if days == 0:
+        return "today"
+    elif days == 1:
+        return "tomorrow"
+    elif days < 7:
+        return f"{days} days from now"
+    elif days < 14:
+        return "next week"
+    elif days < 21:
+        return "2 weeks from now"
+    elif days < 28:
+        return "3 weeks from now"
+    elif days < 60:
+        return "next month"
+    elif days < 365:
+        months = days // 30
+        return f"{months} months from now"
+    else:
+        years = days // 365
+        return f"{years} year{'s' if years > 1 else ''} from now"

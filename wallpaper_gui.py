@@ -10,9 +10,10 @@ from PySide6.QtCore import Qt, QTime
 from PySide6.QtGui import QPixmap, QImage
 
 from wallpaper_manager import set_wallpaper, WallpaperRotator, TaskScheduler, Config
-from wallpaper_manager.constants import ChangeSource, ScalingMode
+from wallpaper_manager.constants import ChangeSource, ScalingMode, WallpaperType
 from wallpaper_manager.logger import setup_logger
 from wallpaper_manager.ui import DropPreviewLabel
+from wallpaper_manager.utils import format_relative_time
 
 
 # Set up logger for this module
@@ -23,7 +24,7 @@ class WallpaperGUI(QMainWindow):
         super().__init__()
         logger.info("Initializing WallpaperGUI")
         self.setWindowTitle("Wallpaper Manager")
-        self.setMinimumSize(800, 700)
+        self.setMinimumSize(800, 720)
         
         # Initialize configuration
         self.config = Config()
@@ -49,7 +50,7 @@ class WallpaperGUI(QMainWindow):
         
         self.preview_label = DropPreviewLabel(self)
         self.preview_label.setAlignment(Qt.AlignCenter)
-        self.preview_label.setMinimumSize(400, 280)  # Reduced height
+        self.preview_label.setMinimumSize(400, 280)
         self.preview_label.setStyleSheet("""
             QLabel {
                 border: 2px dashed #ccc;
@@ -176,10 +177,27 @@ class WallpaperGUI(QMainWindow):
             if 'days' in task_info:
                 self.min_days_spin.setValue(task_info['days'])
             
+            # Calculate next rotation time from cache if rotator exists
+            next_rotation = None
+            if self.rotator:
+                next_rotation = self.rotator.cache.get_next_rotation_time(
+                    min_days_between_repeats=self.min_days_spin.value(),
+                    wallpaper_type=WallpaperType.WALLPAPER
+                )
+            
+            # Format the next rotation time display
+            if next_rotation:
+                next_rotation_str = next_rotation.strftime("%Y-%m-%d")
+                relative_time = format_relative_time(next_rotation)
+                next_rotation_display = f"{next_rotation_str} ({relative_time})"
+            else:
+                next_rotation_display = "Unknown"
+            
             # Update status text
             status_text = f"Scheduled task active:\n"
             status_text += f"• Rotates every {task_info.get('days', '?')} days\n"
-            status_text += f"• At {task_info.get('time', '?')}"
+            status_text += f"• At {task_info.get('time', '?')}\n"
+            status_text += f"• Next rotation: {next_rotation_display}"
             
             # Add platform-specific note
             if sys.platform.startswith('win'):

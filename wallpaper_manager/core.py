@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-from .constants import ChangeSource, ScalingMode
+from .constants import ChangeSource, ScalingMode, WallpaperType
 from .logger import setup_logger
 from .utils import check_powershell_execution_policy, check_linux_dependencies
 from .wallpaper_cache import WallpaperCache
@@ -249,13 +249,9 @@ def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False, source=
     # Check if enough time has passed since the last rotation
     if not force and rotator.cache.has_wallpaper_history():
         current_dt = datetime.now()
-        last_change_dt = datetime.fromtimestamp(rotator.cache.last_wallpaper_change)
+        next_rotation_dt = rotator.cache.get_next_rotation_time(min_days_between_repeats, WallpaperType.WALLPAPER)
         
-        # Calculate next rotation time
-        next_rotation_dt = last_change_dt + timedelta(days=min_days_between_repeats)
-        next_rotation_dt = _adjust_rotation_time(next_rotation_dt)
-        
-        if current_dt < next_rotation_dt:
+        if next_rotation_dt and current_dt < next_rotation_dt:
             logger.info(
                 f"Skipping rotation: {min_days_between_repeats} days have not elapsed since last change. "
                 f"Current time: {current_dt.strftime('%Y-%m-%d %H:%M:%S')}, "
@@ -348,13 +344,9 @@ def rotate_lock_screen(image_dir, min_days_between_repeats=7, force=False, sourc
     # Check if enough time has passed since the last rotation
     if not force and rotator.cache.has_lock_screen_history():
         current_dt = datetime.now()
-        last_change_dt = datetime.fromtimestamp(rotator.cache.last_lock_screen_change)
+        next_rotation_dt = rotator.cache.get_next_rotation_time(min_days_between_repeats, WallpaperType.LOCK_SCREEN)
         
-        # Calculate next rotation time
-        next_rotation_dt = last_change_dt + timedelta(days=min_days_between_repeats)
-        next_rotation_dt = _adjust_rotation_time(next_rotation_dt)
-
-        if current_dt < next_rotation_dt:
+        if next_rotation_dt and current_dt < next_rotation_dt:
             logger.info(
                 f"Skipping lock screen rotation: {min_days_between_repeats} days have not elapsed since last change. "
                 f"Current time: {current_dt.strftime('%Y-%m-%d %H:%M:%S')}, "
@@ -373,16 +365,5 @@ def rotate_lock_screen(image_dir, min_days_between_repeats=7, force=False, sourc
     # Get the scaling mode from the last change - defaults to AUTO if no last change
     scaling_mode = rotator.cache.last_lock_screen.scaling_mode
     set_lock_screen(next_image, scaling_mode)
-
-
-def _adjust_rotation_time(next_rotation_dt):
-    """Adjust the next rotation time to start of day, normalize based on hour."""
-    if next_rotation_dt.hour < 18:
-        # If before 6 PM, set to start of current day
-        next_rotation_dt = next_rotation_dt.replace(hour=0, minute=0, second=0, microsecond=0)
-    else:
-        # If after 6 PM, set to start of next day
-        next_rotation_dt = (next_rotation_dt + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    return next_rotation_dt
 
 

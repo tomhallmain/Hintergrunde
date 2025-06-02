@@ -1,10 +1,9 @@
+from dataclasses import dataclass
+from datetime import datetime, timedelta
 import json
 import os
-import time
-
-from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
+import time
 from typing import List, Optional, Dict, Any
 
 from .logger import setup_logger
@@ -247,4 +246,36 @@ class WallpaperCache:
         all_history = []
         all_history.extend(self.wallpaper_history)
         all_history.extend(self.lock_screen_history)
-        return sorted(all_history, key=lambda x: x.timestamp, reverse=True) 
+        return sorted(all_history, key=lambda x: x.timestamp, reverse=True)
+
+    def get_next_rotation_time(self, min_days_between_repeats: int, wallpaper_type: WallpaperType = WallpaperType.WALLPAPER) -> Optional[datetime]:
+        """Calculate the next rotation time for the specified wallpaper type.
+        
+        Args:
+            min_days_between_repeats: Minimum number of days between rotations
+            wallpaper_type: Type of wallpaper to calculate next rotation for (WALLPAPER or LOCK_SCREEN)
+            
+        Returns:
+            datetime object representing the next rotation time, or None if no history exists
+        """
+        if wallpaper_type == WallpaperType.WALLPAPER:
+            if not self.has_wallpaper_history():
+                return None
+            last_change_dt = datetime.fromtimestamp(self.last_wallpaper_change)
+        else:
+            if not self.has_lock_screen_history():
+                return None
+            last_change_dt = datetime.fromtimestamp(self.last_lock_screen_change)
+        
+        # Calculate next rotation time
+        next_rotation_dt = last_change_dt + timedelta(days=min_days_between_repeats)
+        
+        # Adjust to start of day
+        if next_rotation_dt.hour < 18:
+            # If before 6 PM, set to start of current day
+            next_rotation_dt = next_rotation_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        else:
+            # If after 6 PM, set to start of next day
+            next_rotation_dt = (next_rotation_dt + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        return next_rotation_dt 
