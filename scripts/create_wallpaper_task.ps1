@@ -3,8 +3,12 @@ param(
     [string]$WallpapersDir,
     [int]$DaysInterval,
     [string]$Time,
-    [string]$ScalingMode = "auto"
+    [string]$ScalingMode = "auto",
+    [string]$UseLogonTrigger = "0"
 )
+
+# Convert UseLogonTrigger to boolean
+$DoUseLogonTrigger = $UseLogonTrigger -eq "1"
 
 # Get the current script's directory and go up one level to find set_wallpaper.py
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -55,7 +59,8 @@ if (-not (Test-Path $WallpapersDir -PathType Container)) {
 $action = New-ScheduledTaskAction -Execute "python" -Argument "`"$wallpaperScript`" --rotate `"$WallpapersDir`" --min-days $DaysInterval --no-force --scaling-mode $ScalingMode"
 
 # Create the task trigger
-$trigger = New-ScheduledTaskTrigger -Daily -At $Time
+$triggerDaily = New-ScheduledTaskTrigger -Daily -At $Time
+$triggerLogon = New-ScheduledTaskTrigger -AtLogOn
 
 # Create the task settings
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
@@ -69,9 +74,20 @@ if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
 }
 
-# Register the new task for the current user
-$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
-Register-ScheduledTask -TaskName $taskName -Description $description -Action $action -Trigger $trigger -Settings $settings -Principal $principal
+# Register the new task for the current user with triggers based on UseLogonTrigger
+if ($DoUseLogonTrigger) {
+    # Request admin permissions
+    if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        Write-Host "Requesting administrator privileges for logon trigger..."
+        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -WallpapersDir `"$WallpapersDir`" -DaysInterval $DaysInterval -Time `"$Time`" -ScalingMode `"$ScalingMode`" -UseLogonTrigger `"$UseLogonTrigger`""
+        exit
+    }
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
+    Register-ScheduledTask -TaskName $taskName -Description $description -Action $action -Trigger $triggerDaily,$triggerLogon -Settings $settings -Principal $principal
+} else {
+    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+    Register-ScheduledTask -TaskName $taskName -Description $description -Action $action -Trigger $triggerDaily -Settings $settings -Principal $principal
+}
 
 # Show success message only in interactive mode
 if (-not $PSBoundParameters.ContainsKey('WallpapersDir')) {

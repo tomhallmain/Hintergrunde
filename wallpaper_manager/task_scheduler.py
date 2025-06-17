@@ -125,7 +125,7 @@ class TaskScheduler:
         return self.get_task_info() is not None
     
     def create_task(self, script_path: str, wallpapers_dir: str, days_interval: int, 
-                   time_str: str, scaling_mode: str = 'auto') -> None:
+                   time_str: str, scaling_mode: str = 'auto', use_logon_trigger: bool = False) -> None:
         """Create a scheduled task for wallpaper rotation.
         
         Args:
@@ -134,13 +134,13 @@ class TaskScheduler:
             days_interval: Days between rotations
             time_str: Time of day to rotate (HH:mm format)
             scaling_mode: How to scale the wallpaper (fill, fit, stretch, or auto)
-            
+            use_logon_trigger: Whether to use the logon trigger
         Raises:
             RuntimeError: If task creation fails
             NotImplementedError: If OS is not supported
         """
         if self.system == 'windows':
-            self._create_windows_task(wallpapers_dir, days_interval, time_str, scaling_mode)
+            self._create_windows_task(wallpapers_dir, days_interval, time_str, scaling_mode, use_logon_trigger)
         elif self.system in ['linux', 'darwin']:  # darwin is macOS
             self._create_unix_task(wallpapers_dir, days_interval, time_str, scaling_mode)
         else:
@@ -160,7 +160,7 @@ class TaskScheduler:
         else:
             raise NotImplementedError(f"Task scheduling not supported on {self.system}")
     
-    def _create_windows_task(self, wallpapers_dir: str, days_interval: int, time_str: str, scaling_mode: str) -> None:
+    def _create_windows_task(self, wallpapers_dir: str, days_interval: int, time_str: str, scaling_mode: str, use_logon_trigger: bool) -> None:
         """Create a Windows scheduled task using PowerShell script."""
         # Run the PowerShell script with the parameters
         cmd = [
@@ -171,10 +171,14 @@ class TaskScheduler:
             '-WallpapersDir', str(wallpapers_dir),
             '-DaysInterval', str(days_interval),
             '-Time', time_str,
-            '-ScalingMode', scaling_mode
+            '-ScalingMode', scaling_mode,
         ]
+
+        if use_logon_trigger:
+            cmd.append('-UseLogonTrigger')
+            cmd.append('1')
         
-        print(f"Creating scheduled task with parameters: dir={wallpapers_dir}, interval={days_interval} days, time={time_str}, scaling={scaling_mode}")
+        print(f"Creating scheduled task with parameters: dir={wallpapers_dir}, interval={days_interval} days, time={time_str}, scaling={scaling_mode}, use_logon_trigger={use_logon_trigger}")
         
         # Run the command and show output in real-time
         process = subprocess.Popen(
@@ -222,8 +226,37 @@ class TaskScheduler:
     
     def _remove_windows_task(self) -> None:
         """Remove the Windows scheduled task."""
+        # First try without admin privileges
         result = subprocess.run(['schtasks', '/delete', '/tn', 'RotateWallpaper', '/f'], 
                               capture_output=True, text=True, encoding='cp1252', errors='replace')
+        
+        # If access denied, try with admin privileges
+        if result.returncode != 0 and "Access is denied" in result.stderr:
+            # Create a temporary PowerShell script to remove the task with admin privileges
+            temp_script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'scripts', 'temp_remove.ps1')
+            with open(temp_script, 'w') as f:
+                f.write('''
+# Request admin permissions
+if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "Requesting administrator privileges to remove task..."
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    exit
+}
+
+# Remove the task
+schtasks /delete /tn RotateWallpaper /f
+''')
+            
+            # Run the PowerShell script
+            result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', temp_script],
+                                  capture_output=True, text=True, encoding='cp1252', errors='replace')
+            
+            # Clean up the temporary script
+            try:
+                os.remove(temp_script)
+            except:
+                pass
+        
         if result.returncode != 0:
             raise RuntimeError(f"Failed to remove task: {result.stderr}")
     

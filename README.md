@@ -27,3 +27,5 @@ The application uses PySide6 for the GUI and supports common image formats. On W
    ```
    python wallpaper_gui.py
    ``` 
+
+> **Note for Windows Users**: If you plan to use the logon trigger feature, you may want to run the application as administrator to avoid additional permission prompts. 

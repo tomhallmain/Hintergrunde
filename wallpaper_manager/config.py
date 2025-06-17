@@ -17,7 +17,9 @@ class Config:
             'rotation_time': '09:00',
             'scheduling_enabled': False,
             'scheduled_time': None,
-            'scheduled_days': None
+            'scheduled_days': None,
+            'scaling_mode': 'auto',
+            'use_logon_trigger': False
         }
         self.config = self.load_config()
         

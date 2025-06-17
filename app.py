@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import platform
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QFileDialog, 
@@ -107,6 +108,11 @@ class WallpaperGUI(QMainWindow):
         self.schedule_checkbox = QCheckBox("Enable automatic rotation")
         self.schedule_checkbox.stateChanged.connect(self.toggle_scheduling)
         task_layout.addWidget(self.schedule_checkbox)
+
+        # Add logon trigger checkbox (Windows only)
+        self.logon_trigger_checkbox = QCheckBox("Enable logon trigger (Windows only - requires admin)")
+        self.logon_trigger_checkbox.setEnabled(platform.system().lower() == 'windows')
+        task_layout.addWidget(self.logon_trigger_checkbox)
         
         # Min days between repeats
         min_days_layout = QHBoxLayout()
@@ -276,8 +282,9 @@ class WallpaperGUI(QMainWindow):
             time_str = self.time_edit.time().toString("HH:mm")
             days = self.min_days_spin.value()
             scaling_mode = self.scaling_combo.currentText()
+            use_logon_trigger = self.logon_trigger_checkbox.isChecked()
             
-            logger.info(f"Creating scheduled task: time={time_str}, days={days}, scaling={scaling_mode}")
+            logger.info(f"Creating scheduled task: time={time_str}, days={days}, scaling={scaling_mode}, use_logon_trigger={use_logon_trigger}")
             
             # Save the current settings to config
             self.config.update(
@@ -286,7 +293,8 @@ class WallpaperGUI(QMainWindow):
                 scheduling_enabled=True,
                 scheduled_time=time_str,
                 scheduled_days=days,
-                scaling_mode=scaling_mode
+                scaling_mode=scaling_mode,
+                use_logon_trigger=use_logon_trigger
             )
             
             self.task_scheduler.create_task(
@@ -294,7 +302,8 @@ class WallpaperGUI(QMainWindow):
                 wallpapers_dir=self.current_directory,
                 days_interval=days,
                 time_str=time_str,
-                scaling_mode=scaling_mode
+                scaling_mode=scaling_mode,
+                use_logon_trigger=use_logon_trigger
             )
             
             # Verify task was created
@@ -312,7 +321,8 @@ class WallpaperGUI(QMainWindow):
                 scheduling_enabled=False,
                 scheduled_time=None,
                 scheduled_days=None,
-                scaling_mode=None
+                scaling_mode=None,
+                use_logon_trigger=False
             )
             self.update_task_status()
     
