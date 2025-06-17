@@ -5,6 +5,10 @@ import re
 import subprocess
 from typing import Optional, Dict, Any
 
+from .logger import setup_logger
+
+logger = setup_logger(__name__)
+
 class TaskScheduler:
     """Handles creation and management of scheduled wallpaper rotation tasks."""
     
@@ -178,7 +182,7 @@ class TaskScheduler:
             cmd.append('-UseLogonTrigger')
             cmd.append('1')
         
-        print(f"Creating scheduled task with parameters: dir={wallpapers_dir}, interval={days_interval} days, time={time_str}, scaling={scaling_mode}, use_logon_trigger={use_logon_trigger}")
+        logger.info(f"Creating scheduled task with parameters: dir={wallpapers_dir}, interval={days_interval} days, time={time_str}, scaling={scaling_mode}, use_logon_trigger={use_logon_trigger}")
         
         # Run the command and show output in real-time
         process = subprocess.Popen(
@@ -196,12 +200,12 @@ class TaskScheduler:
             if output == '' and process.poll() is not None:
                 break
             if output and "Debug:" in output:  # Only show debug lines
-                print(f"PowerShell: {output.strip()}")
+                logger.debug(f"PowerShell: {output.strip()}")
         
         # Get any remaining output and the return code
         stdout, stderr = process.communicate()
         if stderr:
-            print(f"PowerShell error: {stderr.strip()}")
+            logger.error(f"PowerShell error: {stderr.strip()}")
         
         if process.returncode != 0:
             raise RuntimeError(f"Failed to create task. Return code: {process.returncode}\nError: {stderr}")

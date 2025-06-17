@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
 from pathlib import Path
 import platform
@@ -228,10 +228,8 @@ def set_wallpaper(image_path, scaling_mode=ScalingMode.AUTO):
             raise RuntimeError(f"Unsupported operating system: {system}")
         
         logger.info(f"Successfully set wallpaper to: {image_path}")
-        print(f"Successfully set wallpaper to: {image_path}")
     except Exception as e:
         logger.error(f"Error setting wallpaper: {str(e)}")
-        print(f"Error setting wallpaper: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
 def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False, source=ChangeSource.MANUAL):
@@ -255,10 +253,6 @@ def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False, source=
             logger.info(
                 f"Skipping rotation: {min_days_between_repeats} days have not elapsed since last change. "
                 f"Current time: {current_dt.strftime('%Y-%m-%d %H:%M:%S')}, "
-                f"Next rotation available: {next_rotation_dt.strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            print(
-                f"Skipping rotation: {min_days_between_repeats} days have not elapsed since last change. "
                 f"Next rotation available: {next_rotation_dt.strftime('%Y-%m-%d %H:%M:%S')}"
             )
             return
@@ -324,7 +318,7 @@ def set_lock_screen(image_path, scaling_mode=ScalingMode.AUTO):
         else:
             raise RuntimeError(f"Lock screen setting not supported on {system}")
         
-        print(f"Successfully set lock screen to: {image_path}")
+        logger.info(f"Successfully set lock screen to: {image_path}")
     except Exception as e:
         print(f"Error setting lock screen: {str(e)}", file=sys.stderr)
         sys.exit(1)
@@ -350,10 +344,6 @@ def rotate_lock_screen(image_dir, min_days_between_repeats=7, force=False, sourc
             logger.info(
                 f"Skipping lock screen rotation: {min_days_between_repeats} days have not elapsed since last change. "
                 f"Current time: {current_dt.strftime('%Y-%m-%d %H:%M:%S')}, "
-                f"Next rotation available: {next_rotation_dt.strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            print(
-                f"Skipping lock screen rotation: {min_days_between_repeats} days have not elapsed since last change. "
                 f"Next rotation available: {next_rotation_dt.strftime('%Y-%m-%d %H:%M:%S')}"
             )
             return

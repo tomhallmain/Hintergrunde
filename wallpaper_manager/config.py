@@ -2,7 +2,10 @@
 import json
 import os
 from pathlib import Path
+from .logger import setup_logger
 from .utils import get_default_media_folder
+
+logger = setup_logger(__name__)
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -38,7 +41,7 @@ class Config:
                     saved_config = json.load(f)
                     config.update(saved_config)
             except Exception as e:
-                print(f"Warning: Could not load config file: {e}")
+                logger.warning(f"Could not load config file: {e}")
         
         return config
     
@@ -48,7 +51,7 @@ class Config:
             with open(self.config_file, 'w') as f:
                 json.dump(self.config, f, indent=2)
         except Exception as e:
-            print(f"Warning: Could not save config file: {e}")
+            logger.warning(f"Could not save config file: {e}")
     
     def get(self, key, default=None):
         """Get a configuration value."""
