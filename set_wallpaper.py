@@ -28,6 +28,7 @@ def print_help():
     print("  --rotate-both      Enable both wallpaper and lock screen rotation")
     print("  --min-days DAYS    Minimum days between repeats (default: 7)")
     print("  --no-force         Respect minimum days between rotations (default: force rotation)")
+    print("  --recurse-subdirs  Include images from subdirectories")
     print("  --scaling-mode MODE  How to scale the wallpaper (default: auto)")
     print("                      Available modes: fill, fit, stretch, auto")
     print("  -h, --help        Show this help message")
@@ -57,6 +58,7 @@ def main():
     parser.add_argument('--rotate-both', action='store_true', help='Enable both wallpaper and lock screen rotation')
     parser.add_argument('--min-days', type=int, default=7, help='Minimum days between repeats (default: 7)')
     parser.add_argument('--no-force', action='store_true', help='Respect minimum days between rotations (default: force rotation)')
+    parser.add_argument('--recurse-subdirs', action='store_true', help='Include images from subdirectories')
     parser.add_argument('--scaling-mode', type=str, default='auto',
                       help='How to scale the wallpaper (fill, fit, stretch, or auto)')
     parser.add_argument('path', nargs='?', help='Path to image file or directory (for rotation mode)')
@@ -104,19 +106,21 @@ def main():
         logger.info(f"Rotation mode: {'both' if args.rotate_both else 'lock screen' if args.rotate_lock_screen else 'wallpaper'}")
         logger.info(f"Minimum days between repeats: {args.min_days}")
         logger.info(f"Force rotation: {not args.no_force}")
+        logger.info(f"Recurse subdirs: {args.recurse_subdirs}")
         force = not args.no_force
         source = ChangeSource.AUTOMATED if args.no_force else ChangeSource.MANUAL
+        recurse = args.recurse_subdirs
         
         if args.rotate_both:
             logger.info("Rotating both wallpaper and lock screen")
-            rotate_wallpaper(args.path, args.min_days, force=force, source=source)
-            rotate_lock_screen(args.path, args.min_days, force=force, source=source)
+            rotate_wallpaper(args.path, args.min_days, force=force, source=source, recurse_subdirs=recurse)
+            rotate_lock_screen(args.path, args.min_days, force=force, source=source, recurse_subdirs=recurse)
         elif args.rotate_lock_screen:
             logger.info("Rotating lock screen only")
-            rotate_lock_screen(args.path, args.min_days, force=force, source=source)
+            rotate_lock_screen(args.path, args.min_days, force=force, source=source, recurse_subdirs=recurse)
         else:  # args.rotate
             logger.info("Rotating wallpaper only")
-            rotate_wallpaper(args.path, args.min_days, force=force, source=source)
+            rotate_wallpaper(args.path, args.min_days, force=force, source=source, recurse_subdirs=recurse)
     else:
         if is_directory:
             logger.error(f"Cannot set directory as wallpaper: {args.path}")

@@ -25,7 +25,7 @@ class WallpaperGUI(QMainWindow):
         super().__init__()
         logger.info("Initializing WallpaperGUI")
         self.setWindowTitle("Wallpaper Manager")
-        self.setMinimumSize(800, 720)
+        self.setMinimumSize(800, 748)
         
         # Initialize configuration
         self.config = Config()
@@ -40,8 +40,13 @@ class WallpaperGUI(QMainWindow):
         self.dir_label = QLabel("No directory selected")
         dir_button = QPushButton("Select Image Directory")
         dir_button.clicked.connect(self.select_directory)
+        self.recurse_subdirs_checkbox = QCheckBox("Include subdirectories")
+        self.recurse_subdirs_checkbox.setChecked(self.config.get('recurse_subdirs', False))
+        self.recurse_subdirs_checkbox.setToolTip("When checked, images from subdirectories are included when finding wallpapers.")
+        self.recurse_subdirs_checkbox.stateChanged.connect(self._on_recurse_subdirs_changed)
         dir_layout.addWidget(self.dir_label)
         dir_layout.addWidget(dir_button)
+        dir_layout.addWidget(self.recurse_subdirs_checkbox)
         layout.addLayout(dir_layout)
         
         # Preview area
@@ -154,11 +159,12 @@ class WallpaperGUI(QMainWindow):
         
         # Load last directory if it exists
         last_dir = self.config.get('last_directory')
+        recurse = self.config.get('recurse_subdirs', False)
         if last_dir and os.path.exists(last_dir):
-            logger.info(f"Loading last directory: {last_dir}")
+            logger.info(f"Loading last directory: {last_dir}, recurse_subdirs={recurse}")
             self.current_directory = last_dir
             self.dir_label.setText(self.current_directory)
-            self.rotator = WallpaperRotator(self.current_directory)
+            self.rotator = WallpaperRotator(self.current_directory, recurse_subdirs=recurse)
             self.update_history()
         
         # Check for existing task and update UI
@@ -203,8 +209,9 @@ class WallpaperGUI(QMainWindow):
             status_text = f"Scheduled task active:\n"
             status_text += f"• Rotates every {task_info.get('days', '?')} days\n"
             status_text += f"• At {task_info.get('time', '?')}\n"
-            status_text += f"• Next rotation: {next_rotation_display}"
-            
+            status_text += f"• Next rotation: {next_rotation_display}\n"
+            status_text += f"• Recurse subdirectories: {task_info.get('recurse_subdirs', '?')}"
+
             # Add platform-specific note
             if sys.platform.startswith('win'):
                 status_text += f"\n• Note: If the computer is off at the scheduled time, the task will run when the computer is next started"
@@ -287,6 +294,7 @@ class WallpaperGUI(QMainWindow):
             logger.info(f"Creating scheduled task: time={time_str}, days={days}, scaling={scaling_mode}, use_logon_trigger={use_logon_trigger}")
             
             # Save the current settings to config
+            recurse_subdirs = self.recurse_subdirs_checkbox.isChecked()
             self.config.update(
                 min_days=days,
                 rotation_time=time_str,
@@ -294,7 +302,8 @@ class WallpaperGUI(QMainWindow):
                 scheduled_time=time_str,
                 scheduled_days=days,
                 scaling_mode=scaling_mode,
-                use_logon_trigger=use_logon_trigger
+                use_logon_trigger=use_logon_trigger,
+                recurse_subdirs=recurse_subdirs
             )
             
             self.task_scheduler.create_task(
@@ -303,7 +312,8 @@ class WallpaperGUI(QMainWindow):
                 days_interval=days,
                 time_str=time_str,
                 scaling_mode=scaling_mode,
-                use_logon_trigger=use_logon_trigger
+                use_logon_trigger=use_logon_trigger,
+                recurse_subdirs=recurse_subdirs
             )
             
             # Verify task was created
@@ -338,13 +348,21 @@ class WallpaperGUI(QMainWindow):
             logger.error(f"Failed to remove scheduled task: {str(e)}")
             QMessageBox.critical(self, "Error", f"Failed to remove scheduled task: {str(e)}")
     
+    def _on_recurse_subdirs_changed(self, state):
+        """Recreate rotator with new recurse setting when checkbox changes."""
+        self.config.set('recurse_subdirs', bool(state))
+        if self.current_directory:
+            self.rotator = WallpaperRotator(self.current_directory, recurse_subdirs=bool(state))
+            self.update_history()
+
     def select_directory(self):
         directory = QFileDialog.getExistingDirectory(self, "Select Image Directory")
         if directory:
             logger.info(f"Selected directory: {directory}")
             self.current_directory = directory
             self.dir_label.setText(directory)
-            self.rotator = WallpaperRotator(directory)
+            recurse = self.recurse_subdirs_checkbox.isChecked()
+            self.rotator = WallpaperRotator(directory, recurse_subdirs=recurse)
             self.update_history()
             
             # Save the selected directory to config
@@ -411,7 +429,8 @@ class WallpaperGUI(QMainWindow):
             logger.info(f"Setting directory: {directory}")
             self.current_directory = directory
             self.dir_label.setText(directory)
-            self.rotator = WallpaperRotator(directory)
+            recurse = self.recurse_subdirs_checkbox.isChecked()
+            self.rotator = WallpaperRotator(directory, recurse_subdirs=recurse)
             self.update_history()
             
             # Save the selected directory to config

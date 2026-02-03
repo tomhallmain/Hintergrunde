@@ -18,18 +18,20 @@ logger = setup_logger('wallpaper_manager.core')
 
 
 class WallpaperRotator:
-    def __init__(self, image_dir, cache_file=None):
+    def __init__(self, image_dir, cache_file=None, recurse_subdirs=False):
         self.image_dir = Path(image_dir)
         self.cache_file = cache_file or str(self.image_dir / '.wallpaper_cache.json')
         self.supported_formats = {'.jpg', '.jpeg', '.png', '.bmp'}
+        self.recurse_subdirs = recurse_subdirs
         self.cache = WallpaperCache(self.cache_file)
-    
+
     def get_available_images(self):
-        """Get all supported images in the directory."""
+        """Get all supported images in the directory (and subdirectories if recurse_subdirs)."""
         images = []
+        glob_fn = self.image_dir.rglob if self.recurse_subdirs else self.image_dir.glob
         for ext in self.supported_formats:
-            images.extend(self.image_dir.glob(f'*{ext}'))
-            images.extend(self.image_dir.glob(f'*{ext.upper()}'))
+            images.extend(glob_fn(f'*{ext}'))
+            images.extend(glob_fn(f'*{ext.upper()}'))
         return [str(img) for img in images if img.is_file()]
     
     def select_next_wallpaper(self, min_days_between_repeats=7, source=ChangeSource.MANUAL):
@@ -240,7 +242,7 @@ def set_wallpaper(image_path, scaling_mode=ScalingMode.AUTO):
         logger.error(f"Error setting wallpaper: {str(e)}")
         sys.exit(1)
 
-def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False, source=ChangeSource.MANUAL):
+def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False, source=ChangeSource.MANUAL, recurse_subdirs=False):
     """Rotate the wallpaper from the specified directory.
     
     Args:
@@ -248,9 +250,10 @@ def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False, source=
         min_days_between_repeats: Minimum number of days between wallpaper changes
         force: If True, ignore the minimum days check and rotate anyway
         source: Source of the wallpaper change (manual or automated)
+        recurse_subdirs: If True, include images from subdirectories
     """
-    logger.info(f"Rotating wallpaper from directory: {image_dir}")
-    rotator = WallpaperRotator(image_dir)
+    logger.info(f"Rotating wallpaper from directory: {image_dir} (recurse_subdirs={recurse_subdirs})")
+    rotator = WallpaperRotator(image_dir, recurse_subdirs=recurse_subdirs)
     
     # Check if enough time has passed since the last rotation
     if not force and rotator.cache.has_wallpaper_history():
@@ -332,7 +335,7 @@ def set_lock_screen(image_path, scaling_mode=ScalingMode.AUTO):
         print(f"Error setting lock screen: {str(e)}", file=sys.stderr)
         sys.exit(1)
 
-def rotate_lock_screen(image_dir, min_days_between_repeats=7, force=False, source=ChangeSource.MANUAL):
+def rotate_lock_screen(image_dir, min_days_between_repeats=7, force=False, source=ChangeSource.MANUAL, recurse_subdirs=False):
     """Rotate the lock screen image from the specified directory.
     
     Args:
@@ -340,9 +343,10 @@ def rotate_lock_screen(image_dir, min_days_between_repeats=7, force=False, sourc
         min_days_between_repeats: Minimum number of days between image changes
         force: If True, ignore the minimum days check and rotate anyway
         source: Source of the lock screen change (manual or automated)
+        recurse_subdirs: If True, include images from subdirectories
     """
-    logger.info(f"Rotating lock screen from directory: {image_dir}")
-    rotator = WallpaperRotator(image_dir)
+    logger.info(f"Rotating lock screen from directory: {image_dir} (recurse_subdirs={recurse_subdirs})")
+    rotator = WallpaperRotator(image_dir, recurse_subdirs=recurse_subdirs)
     
     # Check if enough time has passed since the last rotation
     if not force and rotator.cache.has_lock_screen_history():

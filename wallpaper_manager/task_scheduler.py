@@ -129,7 +129,8 @@ class TaskScheduler:
         return self.get_task_info() is not None
     
     def create_task(self, script_path: str, wallpapers_dir: str, days_interval: int, 
-                   time_str: str, scaling_mode: str = 'auto', use_logon_trigger: bool = False) -> None:
+                   time_str: str, scaling_mode: str = 'auto', use_logon_trigger: bool = False,
+                   recurse_subdirs: bool = False) -> None:
         """Create a scheduled task for wallpaper rotation.
         
         Args:
@@ -139,14 +140,15 @@ class TaskScheduler:
             time_str: Time of day to rotate (HH:mm format)
             scaling_mode: How to scale the wallpaper (fill, fit, stretch, or auto)
             use_logon_trigger: Whether to use the logon trigger
+            recurse_subdirs: Whether to include images from subdirectories
         Raises:
             RuntimeError: If task creation fails
             NotImplementedError: If OS is not supported
         """
         if self.system == 'windows':
-            self._create_windows_task(wallpapers_dir, days_interval, time_str, scaling_mode, use_logon_trigger)
+            self._create_windows_task(wallpapers_dir, days_interval, time_str, scaling_mode, use_logon_trigger, recurse_subdirs)
         elif self.system in ['linux', 'darwin']:  # darwin is macOS
-            self._create_unix_task(wallpapers_dir, days_interval, time_str, scaling_mode)
+            self._create_unix_task(wallpapers_dir, days_interval, time_str, scaling_mode, recurse_subdirs)
         else:
             raise NotImplementedError(f"Task scheduling not supported on {self.system}")
     
@@ -164,7 +166,7 @@ class TaskScheduler:
         else:
             raise NotImplementedError(f"Task scheduling not supported on {self.system}")
     
-    def _create_windows_task(self, wallpapers_dir: str, days_interval: int, time_str: str, scaling_mode: str, use_logon_trigger: bool) -> None:
+    def _create_windows_task(self, wallpapers_dir: str, days_interval: int, time_str: str, scaling_mode: str, use_logon_trigger: bool, recurse_subdirs: bool = False) -> None:
         """Create a Windows scheduled task using PowerShell script."""
         # Run the PowerShell script with the parameters
         cmd = [
@@ -181,8 +183,11 @@ class TaskScheduler:
         if use_logon_trigger:
             cmd.append('-UseLogonTrigger')
             cmd.append('1')
-        
-        logger.info(f"Creating scheduled task with parameters: dir={wallpapers_dir}, interval={days_interval} days, time={time_str}, scaling={scaling_mode}, use_logon_trigger={use_logon_trigger}")
+        if recurse_subdirs:
+            cmd.append('-RecurseSubdirs')
+            cmd.append('1')
+
+        logger.info(f"Creating scheduled task with parameters: dir={wallpapers_dir}, interval={days_interval} days, time={time_str}, scaling={scaling_mode}, use_logon_trigger={use_logon_trigger}, recurse_subdirs={recurse_subdirs}")
         
         # Run the command and show output in real-time
         process = subprocess.Popen(
@@ -210,18 +215,19 @@ class TaskScheduler:
         if process.returncode != 0:
             raise RuntimeError(f"Failed to create task. Return code: {process.returncode}\nError: {stderr}")
     
-    def _create_unix_task(self, wallpapers_dir: str, days_interval: int, time_str: str, scaling_mode: str) -> None:
+    def _create_unix_task(self, wallpapers_dir: str, days_interval: int, time_str: str, scaling_mode: str, recurse_subdirs: bool = False) -> None:
         """Create a Unix cron job using shell script."""
         # Make the script executable
         os.chmod(self.cron_script, 0o755)
         
-        # Run the shell script with the parameters
+        # Run the shell script with the parameters (5th param: 1 = recurse, 0 = don't)
         cmd = [
             self.cron_script,
             wallpapers_dir,
             str(days_interval),
             time_str,
-            scaling_mode
+            scaling_mode,
+            '1' if recurse_subdirs else '0'
         ]
         
         result = subprocess.run(cmd, capture_output=True, text=True)

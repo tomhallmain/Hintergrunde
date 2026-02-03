@@ -14,15 +14,16 @@ fi
 # Make sure the wallpaper script is executable
 chmod +x "$WALLPAPER_SCRIPT"
 
-# Check if all parameters were provided
+# Check if all parameters were provided (4 or 5 with optional recurse)
 params_provided=false
-if [ $# -eq 4 ]; then
+if [ $# -ge 4 ]; then
     params_provided=true
     # Use provided parameters
     WALLPAPERS_DIR="$1"
     DAYS_INTERVAL="$2"
     TIME_STR="$3"
     SCALING_MODE="$4"
+    RECURSE_SUBDIRS="${5:-0}"
 else
     # Get the wallpapers directory from user input
     read -p "Enter the full path to your wallpapers directory: " WALLPAPERS_DIR
@@ -47,6 +48,8 @@ else
         SCALING_MODE="auto"
         echo "Using default scaling mode of auto"
     fi
+
+    RECURSE_SUBDIRS="0"
 fi
 
 # Validate the directory exists
@@ -92,9 +95,14 @@ if grep -q "set_wallpaper.py.*--rotate" "$TEMP_CRON"; then
     sed -i '/^$/d' "$TEMP_CRON"
 fi
 
+# Build script args for cron
+RECURSE_ARG=""
+if [ "$RECURSE_SUBDIRS" = "1" ]; then
+    RECURSE_ARG=" --recurse-subdirs"
+fi
 # Add the new cron job (runs at specified time every X days)
 echo "# Wallpaper rotation task" >> "$TEMP_CRON"
-echo "$MINUTE $HOUR */$DAYS_INTERVAL * * python3 \"$WALLPAPER_SCRIPT\" --rotate \"$WALLPAPERS_DIR\" --min-days $DAYS_INTERVAL --no-force --scaling-mode $SCALING_MODE" >> "$TEMP_CRON"
+echo "$MINUTE $HOUR */$DAYS_INTERVAL * * python3 \"$WALLPAPER_SCRIPT\" --rotate \"$WALLPAPERS_DIR\" --min-days $DAYS_INTERVAL --no-force --scaling-mode $SCALING_MODE$RECURSE_ARG" >> "$TEMP_CRON"
 
 # Install the new crontab
 if ! crontab "$TEMP_CRON"; then

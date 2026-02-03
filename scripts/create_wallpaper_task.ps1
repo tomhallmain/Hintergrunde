@@ -4,7 +4,8 @@ param(
     [int]$DaysInterval,
     [string]$Time,
     [string]$ScalingMode = "auto",
-    [string]$UseLogonTrigger = "0"
+    [string]$UseLogonTrigger = "0",
+    [string]$RecurseSubdirs = "0"
 )
 
 # Convert UseLogonTrigger to boolean
@@ -55,8 +56,13 @@ if (-not (Test-Path $WallpapersDir -PathType Container)) {
     exit 1
 }
 
+# Build script arguments
+$scriptArgs = "`"$wallpaperScript`" --rotate `"$WallpapersDir`" --min-days $DaysInterval --no-force --scaling-mode $ScalingMode"
+if ($RecurseSubdirs -eq "1") {
+    $scriptArgs += " --recurse-subdirs"
+}
 # Create the task action with the same interval for both the task and the script
-$action = New-ScheduledTaskAction -Execute "python" -Argument "`"$wallpaperScript`" --rotate `"$WallpapersDir`" --min-days $DaysInterval --no-force --scaling-mode $ScalingMode"
+$action = New-ScheduledTaskAction -Execute "python" -Argument $scriptArgs
 
 # Create the task trigger
 $triggerDaily = New-ScheduledTaskTrigger -Daily -At $Time
@@ -79,7 +85,8 @@ if ($DoUseLogonTrigger) {
     # Request admin permissions
     if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
         Write-Host "Requesting administrator privileges for logon trigger..."
-        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -WallpapersDir `"$WallpapersDir`" -DaysInterval $DaysInterval -Time `"$Time`" -ScalingMode `"$ScalingMode`" -UseLogonTrigger `"$UseLogonTrigger`""
+        $recurseArg = if ($RecurseSubdirs -eq "1") { " -RecurseSubdirs 1" } else { "" }
+        Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -WallpapersDir `"$WallpapersDir`" -DaysInterval $DaysInterval -Time `"$Time`" -ScalingMode `"$ScalingMode`" -UseLogonTrigger `"$UseLogonTrigger`"$recurseArg"
         exit
     }
     $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
