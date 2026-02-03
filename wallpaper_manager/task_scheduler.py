@@ -236,37 +236,21 @@ class TaskScheduler:
     
     def _remove_windows_task(self) -> None:
         """Remove the Windows scheduled task."""
-        # First try without admin privileges
-        result = subprocess.run(['schtasks', '/delete', '/tn', 'RotateWallpaper', '/f'], 
+        # First try without admin privileges (succeeds for user-created tasks)
+        result = subprocess.run(['schtasks', '/delete', '/tn', 'RotateWallpaper', '/f'],
                               capture_output=True, text=True, encoding='cp1252', errors='replace')
-        
-        # If access denied, try with admin privileges
-        if result.returncode != 0 and "Access is denied" in result.stderr:
-            # Create a temporary PowerShell script to remove the task with admin privileges
-            temp_script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'scripts', 'temp_remove.ps1')
-            with open(temp_script, 'w') as f:
-                f.write('''
-# Request admin permissions
-if (-not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    Write-Host "Requesting administrator privileges to remove task..."
-    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
-    exit
-}
 
-# Remove the task
-schtasks /delete /tn RotateWallpaper /f
-''')
-            
-            # Run the PowerShell script
-            result = subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', temp_script],
-                                  capture_output=True, text=True, encoding='cp1252', errors='replace')
-            
-            # Clean up the temporary script
-            try:
-                os.remove(temp_script)
-            except:
-                pass
-        
+        # If access denied, run elevated once: one UAC prompt, one elevated process (no temp script)
+        if result.returncode != 0 and "Access is denied" in result.stderr:
+            elevate_cmd = (
+                r"& { $p = Start-Process powershell -Verb RunAs "
+                r"-ArgumentList '-NoProfile','-WindowStyle','Hidden','-Command','schtasks /delete /tn RotateWallpaper /f' "
+                r"-Wait -PassThru; exit $p.ExitCode }"
+            )
+            result = subprocess.run(
+                ['powershell.exe', '-WindowStyle', 'Hidden', '-NoProfile', '-Command', elevate_cmd],
+                capture_output=True, text=True, encoding='cp1252', errors='replace', timeout=60
+            )
         if result.returncode != 0:
             raise RuntimeError(f"Failed to remove task: {result.stderr}")
     
