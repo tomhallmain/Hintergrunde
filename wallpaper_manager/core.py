@@ -27,12 +27,17 @@ class WallpaperRotator:
 
     def get_available_images(self):
         """Get all supported images in the directory (and subdirectories if recurse_subdirs)."""
-        images = []
-        glob_fn = self.image_dir.rglob if self.recurse_subdirs else self.image_dir.glob
-        for ext in self.supported_formats:
-            images.extend(glob_fn(f'*{ext}'))
-            images.extend(glob_fn(f'*{ext.upper()}'))
-        return [str(img) for img in images if img.is_file()]
+        if self.recurse_subdirs:
+            images = []
+            for ext in self.supported_formats:
+                images.extend(self.image_dir.rglob(f'*{ext}'))
+                images.extend(self.image_dir.rglob(f'*{ext.upper()}'))
+            return [str(img) for img in images if img.is_file()]
+        # Top-level only: iterdir() yields direct children, no recursion
+        return [
+            str(f) for f in self.image_dir.iterdir()
+            if f.is_file() and f.suffix.lower() in self.supported_formats
+        ]
     
     def select_next_wallpaper(self, min_days_between_repeats=7, source=ChangeSource.MANUAL):
         """Select the next wallpaper using a random strategy with history tracking.
