@@ -58,8 +58,11 @@ class WallpaperRotator:
         
         selected_image = random.choice(eligible_images)
         
-        # Update cache
-        self.cache.add_wallpaper_to_history(selected_image, source=source)
+        # Determine the appropriate scaling mode for this image
+        scaling_mode = get_scaling_mode(selected_image)
+        
+        # Update cache with the determined scaling mode
+        self.cache.add_wallpaper_to_history(selected_image, source=source, scaling_mode=scaling_mode)
         
         return selected_image
 
@@ -89,8 +92,11 @@ class WallpaperRotator:
         
         selected_image = random.choice(eligible_images)
         
-        # Update cache
-        self.cache.add_lock_screen_to_history(selected_image, source=source)
+        # Determine the appropriate scaling mode for this image
+        scaling_mode = get_scaling_mode(selected_image)
+        
+        # Update cache with the determined scaling mode
+        self.cache.add_lock_screen_to_history(selected_image, source=source, scaling_mode=scaling_mode)
         
         return selected_image
 
@@ -104,6 +110,8 @@ def get_scaling_mode(image_path):
             # If image is portrait (height > width), use FIT to avoid stretching
             if width < height:
                 return ScalingMode.FIT
+            else:
+                return ScalingMode.FILL
     except (ImportError, Exception):
         pass
     return ScalingMode.FILL
@@ -261,8 +269,9 @@ def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False, source=
     next_wallpaper = rotator.select_next_wallpaper(min_days_between_repeats, source=source)
     logger.info(f"Selected next wallpaper: {next_wallpaper}")
     
-    # Get the scaling mode from the last change - defaults to AUTO if no last change
+    # Get the scaling mode that was determined and saved for this wallpaper
     scaling_mode = rotator.cache.last_wallpaper.scaling_mode
+    logger.info(f"Using scaling mode: {scaling_mode}")
     set_wallpaper(next_wallpaper, scaling_mode)
 
 def set_windows_lock_screen(image_path):
@@ -352,8 +361,9 @@ def rotate_lock_screen(image_dir, min_days_between_repeats=7, force=False, sourc
     next_image = rotator.select_next_lock_screen(min_days_between_repeats, source=source)
     logger.info(f"Selected next lock screen image: {next_image}")
     
-    # Get the scaling mode from the last change - defaults to AUTO if no last change
+    # Get the scaling mode that was determined and saved for this lock screen image
     scaling_mode = rotator.cache.last_lock_screen.scaling_mode
+    logger.info(f"Using scaling mode: {scaling_mode}")
     set_lock_screen(next_image, scaling_mode)
 
 
