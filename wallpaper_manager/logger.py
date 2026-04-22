@@ -45,7 +45,7 @@ def cleanup_old_logs(log_dir, log_file):
             except OSError as e:
                 print(f"Warning: Could not delete old log file {old_file}: {e}")
 
-def setup_logger(name, log_file='hintergrunde.log'):
+def setup_logger(name, log_file='hintergrunde.log', level=logging.DEBUG):
     """Set up a logger with timed rotating file handler.
     
     Args:
@@ -61,7 +61,7 @@ def setup_logger(name, log_file='hintergrunde.log'):
     if logger.handlers:
         return logger
     
-    logger.setLevel(logging.INFO)
+    logger.setLevel(level)
     
     # Create rotating file handler
     log_dir = get_log_directory()

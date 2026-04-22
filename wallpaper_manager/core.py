@@ -161,19 +161,51 @@ def set_windows_wallpaper(image_path, scaling_mode=ScalingMode.FILL):
         raise
 
 def set_macos_wallpaper(image_path, scaling_mode=ScalingMode.FILL):
-    """Set wallpaper on macOS using osascript."""
+    """Set wallpaper on macOS.
+
+    Tries the Cocoa API (NSWorkspace) via PyObjC first — this is the only way
+    to control scaling. Falls back to AppleScript via System Events if PyObjC
+    is not available; in that case the picture is set but scaling is not changed.
+    """
     abs_path = str(Path(image_path).resolve())
-    
-    script = f'''
-    tell application "Finder"
-        set desktop picture to POSIX file "{abs_path}"
-        set desktop picture options to {{scaling: {scaling_mode.get_macos_option()}}}
-    end tell
-    '''
+
+    # Primary: Cocoa API via PyObjC (supports scaling)
     try:
-        subprocess.run(['osascript', '-e', script], check=True)
+        import AppKit
+        ns_scaling, allow_clipping = scaling_mode.get_macos_scaling()
+        workspace = AppKit.NSWorkspace.sharedWorkspace()
+        url = AppKit.NSURL.fileURLWithPath_(abs_path)
+        options = {
+            AppKit.NSWorkspaceDesktopImageScalingKey: ns_scaling,
+            AppKit.NSWorkspaceDesktopImageAllowClippingKey: allow_clipping,
+        }
+        for screen in AppKit.NSScreen.screens():
+            workspace.setDesktopImageURL_forScreen_options_error_(
+                url, screen, options, None
+            )
+        logger.info("Set macOS wallpaper via Cocoa API")
+        return
+    except ImportError:
+        logger.debug("PyObjC/AppKit not available, falling back to AppleScript (scaling ignored)")
+    except Exception as e:
+        logger.warning(f"Cocoa API failed ({e}), falling back to AppleScript")
+
+    # Fallback: AppleScript — sets the picture only, no scaling control
+    script = f'''
+tell application "System Events"
+    tell every desktop
+        set picture to "{abs_path}"
+    end tell
+end tell
+'''
+    try:
+        result = subprocess.run(['osascript', '-e', script], check=True,
+                                capture_output=True, text=True)
+        if result.stderr:
+            logger.debug(f"osascript stderr: {result.stderr.strip()}")
+        logger.info("Set macOS wallpaper via AppleScript (scaling not applied)")
     except subprocess.CalledProcessError as e:
-        print(f"Warning: AppleScript command failed: {str(e)}", file=sys.stderr)
+        logger.error(f"AppleScript command failed: {e.stderr.strip() if e.stderr else str(e)}")
         raise
 
 def set_linux_wallpaper(image_path, scaling_mode=ScalingMode.FILL):
@@ -245,7 +277,7 @@ def set_wallpaper(image_path, scaling_mode=ScalingMode.AUTO):
         logger.info(f"Successfully set wallpaper to: {image_path}")
     except Exception as e:
         logger.error(f"Error setting wallpaper: {str(e)}")
-        sys.exit(1)
+        raise
 
 def rotate_wallpaper(image_dir, min_days_between_repeats=7, force=False, source=ChangeSource.MANUAL, recurse_subdirs=False):
     """Rotate the wallpaper from the specified directory.

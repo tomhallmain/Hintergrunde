@@ -93,10 +93,12 @@ class TaskScheduler:
         try:
             result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
             if result.returncode != 0:
+                logger.debug(f"crontab -l failed (rc={result.returncode}): {result.stderr.strip()}")
                 return None
-            
+
+            logger.debug(f"Current crontab:\n{result.stdout.strip()}")
             for line in result.stdout.splitlines():
-                if 'set_wallpaper.py.*--rotate' in line:
+                if re.search(r'set_wallpaper\.py.*--rotate', line):
                     # Parse cron line
                     parts = line.split()
                     if len(parts) >= 6:
@@ -115,9 +117,12 @@ class TaskScheduler:
                         scaling_match = re.search(r'--scaling-mode\s+(\w+)', line)
                         if scaling_match:
                             task_info['scaling_mode'] = scaling_match.group(1)
+                        logger.debug(f"Found cron task: {task_info}")
                         return task_info
+            logger.debug("No wallpaper rotation entry found in crontab")
             return None
         except Exception:
+            logger.exception("Error reading crontab")
             return None
     
     def check_existing_task(self) -> bool:
@@ -219,7 +224,7 @@ class TaskScheduler:
         """Create a Unix cron job using shell script."""
         # Make the script executable
         os.chmod(self.cron_script, 0o755)
-        
+
         # Run the shell script with the parameters (5th param: 1 = recurse, 0 = don't)
         cmd = [
             self.cron_script,
@@ -229,8 +234,14 @@ class TaskScheduler:
             scaling_mode,
             '1' if recurse_subdirs else '0'
         ]
-        
+
+        logger.debug(f"Running cron script: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.stdout:
+            logger.debug(f"Cron script stdout: {result.stdout.strip()}")
+        if result.stderr:
+            logger.debug(f"Cron script stderr: {result.stderr.strip()}")
+        logger.debug(f"Cron script exit code: {result.returncode}")
         if result.returncode != 0:
             raise RuntimeError(f"Failed to create cron job: {result.stderr}")
     
@@ -256,14 +267,15 @@ class TaskScheduler:
     
     def _remove_unix_task(self) -> None:
         """Remove the Unix cron job."""
-        # Get current crontab
         result = subprocess.run(['crontab', '-l'], capture_output=True, text=True)
         if result.returncode == 0:
             lines = result.stdout.splitlines()
-            # Remove wallpaper rotation entries
-            lines = [line for line in lines if 'set_wallpaper.py.*--rotate' not in line]
-            # Install new crontab
-            new_crontab = '\n'.join(lines) + '\n'
+            filtered = [line for line in lines
+                        if not re.search(r'set_wallpaper\.py.*--rotate', line)
+                        and line != '# Wallpaper rotation task']
+            removed = len(lines) - len(filtered)
+            logger.debug(f"Removing {removed} crontab line(s) matching wallpaper rotation pattern")
+            new_crontab = '\n'.join(filtered) + '\n'
             result = subprocess.run(['crontab', '-'], input=new_crontab, text=True, capture_output=True)
             if result.returncode != 0:
                 raise RuntimeError(f"Failed to remove cron job: {result.stderr}") 

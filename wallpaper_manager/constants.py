@@ -8,13 +8,20 @@ class ScalingMode(Enum):
     STRETCH = auto() # Stretch to fill, may distort
     AUTO = auto()    # Unknown scaling mode
 
-    def get_macos_option(self) -> str:
-        """Get the corresponding macOS scaling option."""
+    def get_macos_scaling(self) -> tuple:
+        """Return (NSImageScaling, allowClipping) for NSWorkspace.setDesktopImageURL.
+
+        NSImageScaling values (AppKit):
+            1 = NSImageScaleAxesIndependently (stretch, ignores aspect ratio)
+            3 = NSImageScaleProportionallyUpOrDown (scale to fit/fill)
+
+        allowClipping=True crops to fill; False letterboxes to fit.
+        """
         return {
-            ScalingMode.FILL: 'fill',
-            ScalingMode.FIT: 'fit',
-            ScalingMode.STRETCH: 'stretch',
-            ScalingMode.AUTO: 'fill'
+            ScalingMode.FILL:    (3, True),
+            ScalingMode.FIT:     (3, False),
+            ScalingMode.STRETCH: (1, False),
+            ScalingMode.AUTO:    (3, True),
         }[self]
 
     def get_gnome_option(self) -> str:

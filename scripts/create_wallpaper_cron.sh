@@ -88,11 +88,11 @@ crontab -l 2>/dev/null > "$TEMP_CRON"
 # Check for existing wallpaper rotation entries
 if grep -q "set_wallpaper.py.*--rotate" "$TEMP_CRON"; then
     echo "Found existing wallpaper rotation task. Removing it..."
-    # Remove the existing entries
-    sed -i '/# Wallpaper rotation task/d' "$TEMP_CRON"
-    sed -i '/set_wallpaper.py.*--rotate/d' "$TEMP_CRON"
+    # Remove the existing entries (use '' backup suffix for BSD sed compatibility on macOS)
+    sed -i '' '/# Wallpaper rotation task/d' "$TEMP_CRON" 2>/dev/null || sed -i '/# Wallpaper rotation task/d' "$TEMP_CRON"
+    sed -i '' '/set_wallpaper.py.*--rotate/d' "$TEMP_CRON" 2>/dev/null || sed -i '/set_wallpaper.py.*--rotate/d' "$TEMP_CRON"
     # Remove any empty lines that might have been created
-    sed -i '/^$/d' "$TEMP_CRON"
+    sed -i '' '/^$/d' "$TEMP_CRON" 2>/dev/null || sed -i '/^$/d' "$TEMP_CRON"
 fi
 
 # Build script args for cron
